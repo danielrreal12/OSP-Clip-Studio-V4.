@@ -26,7 +26,7 @@
       <div id="config-banner" class="banner" hidden></div>
       <form id="form">
         <label class="drop" id="drop">
-          <input id="video" name="video" type="file" accept="video/*" required>
+          <input id="video" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm,.mkv">
           <span class="drop-title" id="filename">Drop a video or choose one</span>
           <span class="drop-meta" id="file-meta">MP4, MOV, WEBM · phone or Chromebook</span>
         </label>
@@ -46,6 +46,7 @@
         <label class="stack" for="music">Music you have rights to <span>optional</span></label>
         <input id="music" name="music" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac">
         <p class="estimate" id="estimate"></p>
+        <p id="form-alert" class="banner bad" hidden></p>
         <button id="submit" type="submit">Create the edit</button>
       </form>
     </section>

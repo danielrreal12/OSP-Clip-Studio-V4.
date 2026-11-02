@@ -3,6 +3,7 @@ const videoInput = document.querySelector("#video");
 const submit = document.querySelector("#submit");
 const jobCard = document.querySelector("#job");
 const banner = document.querySelector("#config-banner");
+const formAlert = document.querySelector("#form-alert");
 const estimate = document.querySelector("#estimate");
 const filename = document.querySelector("#filename");
 const drop = document.querySelector("#drop");
@@ -36,20 +37,23 @@ function boot() {
         ? `About $${Number(perMinute.estimated_usd).toFixed(3)} of model cost per minute of source. The invoice can differ; this uses published rate estimates.`
         : "";
       if (!data.ai_configured) {
+        const message = data.message || "The AI provider is not configured.";
         banner.hidden = false;
         banner.className = "banner bad";
-        banner.textContent = data.message || "The AI provider is not configured.";
-        submit.disabled = true;
+        banner.textContent = message;
+        showFormAlert(message);
       } else {
         banner.hidden = false;
         banner.className = "banner info";
         banner.textContent = `Vision ${data.vision_model}, director ${data.director_model}, speech ${data.transcribe_model}.`;
+        showFormAlert("");
       }
     })
     .catch(() => {
       banner.hidden = false;
       banner.className = "banner bad";
       banner.textContent = "The studio could not be reached.";
+      showFormAlert("The studio could not be reached. Wait a few seconds and tap Create the edit again.");
     });
 
   const saved = sessionStorage.getItem("osp-job");
@@ -83,16 +87,33 @@ videoInput.addEventListener("change", () => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = videoInput.files[0];
-  if (!file) return;
+  if (!config) {
+    showFormAlert("Still checking the server. Wait a second and tap Create the edit again.");
+    return;
+  }
+  if (!config.ai_configured) {
+    const message = config.message || "OPENAI_API_KEY is not configured on the server. Autonomous editing cannot run until that key is set.";
+    showFormAlert(message);
+    formAlert.scrollIntoView({ block: "center" });
+    return;
+  }
+  if (!file) {
+    showFormAlert("Choose a video first. Tap the dashed box, pick a file, and wait until its name appears here.");
+    formAlert.scrollIntoView({ block: "center" });
+    return;
+  }
   const maxMb = (config && config.max_upload_mb) || 250;
   if (file.size > maxMb * 1024 * 1024) {
-    showAlert(`That file is over the ${maxMb} MB limit.`);
+    showFormAlert(`That file is over the ${maxMb} MB limit.`);
     return;
   }
   submit.disabled = true;
+  submit.textContent = "Uploading…";
   jobCard.hidden = false;
+  showFormAlert("");
   showAlert("");
   setMessage("Uploading…", 2);
+  jobCard.scrollIntoView({ block: "start" });
   const body = new FormData(form);
   try {
     const response = await fetch("/api/jobs", { method: "POST", body });
@@ -100,12 +121,15 @@ form.addEventListener("submit", async (event) => {
     if (!response.ok) throw new Error(payload.message || "Upload failed");
     currentJob = payload.job;
     sessionStorage.setItem("osp-job", currentJob);
+    submit.textContent = "Working…";
     if (timer) clearInterval(timer);
     poll();
     timer = setInterval(poll, 1600);
   } catch (error) {
+    showFormAlert(error.message);
     showAlert(error.message);
-    submit.disabled = !config || !config.ai_configured;
+    submit.disabled = false;
+    submit.textContent = "Create the edit";
   }
 });
 
@@ -119,7 +143,8 @@ async function poll() {
     if (status.state === "done" || status.state === "error") {
       clearInterval(timer);
       timer = null;
-      submit.disabled = !config || !config.ai_configured;
+      submit.disabled = false;
+      submit.textContent = "Create the edit";
       if (status.plan_ready || status.state === "done") loadPlan();
     }
   } catch (error) {
@@ -361,6 +386,11 @@ function showAlert(text) {
   const node = document.querySelector("#alert");
   node.hidden = !text;
   node.textContent = text || "";
+}
+
+function showFormAlert(text) {
+  formAlert.hidden = !text;
+  formAlert.textContent = text || "";
 }
 
 function labelFor(orientation) {
