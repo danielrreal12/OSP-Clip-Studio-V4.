@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: osp-clip-studio
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: '250'
+      - key: WEB_CONCURRENCY
+        value: '1'
