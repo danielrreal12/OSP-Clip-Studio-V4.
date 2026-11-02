@@ -62,7 +62,7 @@ class OpenAIProvider:
         try:
             parsed = json.loads(_FENCE.sub("", content.strip()))
         except json.JSONDecodeError as exc:
-            raise ProviderError("The AI service returned an unreadable response.") from exc
+            raise ProviderError("The AI service returned an unreadable response. " + _detail(content)) from exc
         if not isinstance(parsed, dict):
             raise ProviderError("The AI service returned a response that was not a JSON object.")
         usage = getattr(response, "usage", None)
@@ -123,10 +123,12 @@ class OpenAIProvider:
             raise ConfigurationError("OPENAI_API_KEY was rejected. Check the key on the server.") from exc
         except RateLimitError as exc:
             raise ProviderError("The AI provider rate limit or quota was hit. Nothing was exported.") from exc
-        except (APIConnectionError, BadRequestError) as exc:
-            raise ProviderError("The AI request failed. Nothing was exported.") from exc
+        except BadRequestError as exc:
+            raise ProviderError("The AI request was rejected. " + _error_detail(exc)) from exc
+        except APIConnectionError as exc:
+            raise ProviderError("The AI provider could not be reached. " + _error_detail(exc)) from exc
         except APIStatusError as exc:
-            raise ProviderError(f"The AI provider returned HTTP {exc.status_code}. Nothing was exported.") from exc
+            raise ProviderError(f"The AI provider returned HTTP {exc.status_code}. " + _error_detail(exc)) from exc
 
     def _transcribe_call(self, path: Path, model: str):
         from openai import APIConnectionError, APIStatusError, AuthenticationError, BadRequestError, RateLimitError
@@ -154,6 +156,26 @@ class OpenAIProvider:
             raise ProviderError("Transcription could not reach the AI provider.") from exc
         except APIStatusError as exc:
             raise ProviderError(f"Transcription failed with HTTP {exc.status_code}.") from exc
+
+
+def _error_detail(exc: BaseException) -> str:
+    body = getattr(exc, "body", None)
+    message = ""
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message") or "")
+        elif error:
+            message = str(error)
+    if not message:
+        message = str(exc)
+    return _detail(message)
+
+
+def _detail(text: str) -> str:
+    from osp.errors import scrub
+
+    return scrub(text, 220)
 
 
 def build_provider(settings, client=None) -> OpenAIProvider:
