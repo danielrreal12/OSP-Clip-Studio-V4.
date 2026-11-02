@@ -80,17 +80,43 @@ def motion_between(path: Path, start: float, end: float) -> dict:
     return classify_motion(float(np.median(mag)), float(np.median(flow[..., 0])), float(np.median(flow[..., 1])))
 
 
-def annotate_scenes(path: Path, scenes: list[dict], limit: int = 12) -> list[dict]:
+def annotate_scenes(scenes: list[dict], samples: list[dict], limit: int = 12) -> list[dict]:
+    """Measure motion from gray frames already decoded for the quality pass."""
+    frames = [(float(sample["t"]), sample["frame"]) for sample in samples if sample.get("frame") is not None]
     annotated = []
     for index, scene in enumerate(scenes):
         item = dict(scene)
-        if index < limit:
+        if index < limit and len(frames) >= 2:
             try:
-                item["motion"] = motion_between(path, float(scene["start"]), float(scene["end"]))
+                item["motion"] = _motion_in_window(frames, float(scene["start"]), float(scene["end"]))
             except Exception:
                 log.exception("Motion measurement failed for scene %s", index)
                 item["motion"] = classify_motion(0.0, 0.0, 0.0)
+        elif index < limit:
+            item["motion"] = classify_motion(0.0, 0.0, 0.0)
         else:
             item["motion"] = {"label": "unmeasured", "score": 0.0, "dx": 0.0, "dy": 0.0, "magnitude": 0.0}
         annotated.append(item)
     return annotated
+
+
+def _nearest(frames: list[tuple[float, np.ndarray]], timestamp: float):
+    return min(frames, key=lambda item: abs(item[0] - timestamp))
+
+
+def _motion_in_window(frames: list[tuple[float, np.ndarray]], start: float, end: float) -> dict:
+    import cv2
+
+    span = max(0.0, end - start)
+    gap = 0.2 if span > 0.45 else max(0.08, span / 3)
+    first_t = start + min(0.15, span / 3)
+    second_t = min(end - 0.05, first_t + gap)
+    if second_t <= first_t:
+        return classify_motion(0.0, 0.0, 0.0)
+    first = _nearest(frames, first_t)[1]
+    second = _nearest(frames, second_t)[1]
+    if first is second:
+        return classify_motion(0.0, 0.0, 0.0)
+    flow = cv2.calcOpticalFlowFarneback(first, second, None, 0.5, 2, 15, 2, 5, 1.2, 0)
+    mag = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
+    return classify_motion(float(np.median(mag)), float(np.median(flow[..., 0])), float(np.median(flow[..., 1])))

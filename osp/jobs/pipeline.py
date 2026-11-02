@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from osp.ai.director import direct_edit
@@ -79,6 +80,10 @@ def _full(job_id: str, store: JobStore, settings, provider) -> None:
     options = _options(status)
     if disk_free_mb(store.work_dir) < settings.min_free_mb:
         raise BudgetExceeded("The server does not have enough free disk to analyze this video.")
+    check_access = getattr(provider, "check_access", None)
+    if callable(check_access):
+        store.mark_stage(job_id, "probe", "Checking the AI key")
+        check_access()
     ledger = _ledger(settings, 0)
     analysis = analyze_media(source, filename=options.get("filename") or "", on_stage=lambda stage, message: store.mark_stage(job_id, stage, message))
     duration = float(analysis["duration"])
@@ -91,23 +96,20 @@ def _full(job_id: str, store: JobStore, settings, provider) -> None:
     store.update_status(job_id, cost=ledger.to_dict())
     _check_storage(store, job_id, settings)
 
-    store.mark_stage(job_id, "vision", "Watching the important frames")
+    store.mark_stage(job_id, "vision", "Watching the frames and transcribing speech")
     timestamps = select_timestamps(analysis["scenes"], analysis["quality_samples"], settings.budget_max_frames)
     frame_dir = store.job_dir(job_id) / "frames"
     frames = prepare_frames(source, timestamps, frame_dir, width=512)
-    notes = analyze_frames(provider, settings, ledger, source, frames, frame_dir)
-    regions, unlocalized = sensitive_from_notes(notes)
-    analysis["frames"] = [
-        {"index": frame["index"], "timestamp": frame["timestamp"], "path": frame["path"]} for frame in frames
-    ]
-    analysis["vision"] = {"model": settings.vision_model, "frames": notes}
-    analysis["sensitive_regions"] = regions
-    analysis["sensitive_unlocalized"] = unlocalized
-    store.update_status(job_id, cost=ledger.to_dict())
 
-    store.mark_stage(job_id, "speech", "Transcribing speech")
-    if analysis["has_audio"]:
-        analysis["transcript"] = transcribe_media(
+    def watch():
+        return analyze_frames(provider, settings, ledger, source, frames, frame_dir)
+
+    def listen():
+        if not analysis["has_audio"]:
+            skipped = dict(analysis["transcript"])
+            skipped["skipped_reason"] = "This video has no audio track."
+            return skipped
+        return transcribe_media(
             provider,
             settings,
             ledger,
@@ -115,12 +117,25 @@ def _full(job_id: str, store: JobStore, settings, provider) -> None:
             store.job_dir(job_id) / "work",
             analysis["audio"],
         )
-        if analysis["transcript"].get("coverage_sec", 0) + 1.5 < duration and not analysis["transcript"].get("skipped_reason"):
-            analysis["transcript"]["skipped_reason"] = (
-                f"Transcription covered the first {analysis['transcript']['coverage_sec']:.0f}s of audio."
-            )
-    else:
-        analysis["transcript"]["skipped_reason"] = "This video has no audio track."
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        vision_future = pool.submit(watch)
+        speech_future = pool.submit(listen)
+        notes = vision_future.result()
+        analysis["transcript"] = speech_future.result()
+    if analysis["transcript"].get("coverage_sec", 0) + 1.5 < duration and not analysis["transcript"].get("skipped_reason"):
+        analysis["transcript"]["skipped_reason"] = (
+            f"Transcription covered the first {analysis['transcript']['coverage_sec']:.0f}s of audio."
+        )
+    regions, unlocalized = sensitive_from_notes(notes)
+    analysis["frames"] = [
+        {"index": frame["index"], "timestamp": frame["timestamp"], "path": frame["path"]} for frame in frames
+    ]
+    analysis["vision"] = {"model": settings.vision_model, "frames": notes}
+    analysis["sensitive_regions"] = regions
+    analysis["sensitive_unlocalized"] = unlocalized
+    store.mark_stage(job_id, "speech", "Speech and picture notes are in")
+    store.update_status(job_id, cost=ledger.to_dict())
     if ledger.actual_usd > settings.budget_max_cost_usd:
         raise BudgetExceeded("The AI cost budget was exceeded. The export was stopped.")
     store.write_json(job_id, "analysis.json", analysis)
@@ -177,9 +192,7 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
                     music=music,
                     on_progress=progress,
                 )
-                outputs.append(manifest)
-            store.mark_stage(job_id, "qa", "Checking the export")
-            for manifest, orientation in zip(outputs, orientations):
+                store.mark_stage(job_id, "qa", f"Checking the {orientation} export")
                 report = review_output(
                     Path(manifest["path"]),
                     plan=plan,
@@ -188,6 +201,16 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
                     expected_size=_even_size(settings, orientation),
                 )
                 last_reports.append({"orientation": orientation, **report})
+                if not report.get("passed"):
+                    # A failed export is revised before the other shape is encoded.
+                    break
+                outputs.append(manifest)
+                store.update_status(
+                    job_id,
+                    state="processing",
+                    outputs=_public_outputs(job_id, outputs),
+                    message=f"The {orientation} export is ready.",
+                )
         except RenderError as exc:
             last_reports = [
                 {
@@ -198,7 +221,7 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
             ]
             outputs = []
         store.write_json(job_id, "qa.json", {"attempts": last_reports, "revision": plan.get("meta", {}).get("revision", 0)})
-        if outputs and all(item["passed"] for item in last_reports):
+        if len(outputs) == len(orientations) and all(item["passed"] for item in last_reports):
             _finish_ok(job_id, store, settings, plan, analysis, outputs, last_reports, ledger, started)
             return
         if attempt >= settings.budget_max_retries:
@@ -218,7 +241,6 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
     store.update_status(
         job_id,
         state="error",
-        progress=0,
         message="The export failed quality checks"
         + (f" ({', '.join(names)})" if names else "")
         + " and the retry budget is used up.",
@@ -272,6 +294,22 @@ def _finish_ok(job_id, store, settings, plan, analysis, outputs, reports, ledger
         stages=_done_stages(),
     )
     store.bump_metric("renders")
+
+
+def _public_outputs(job_id: str, manifests: list[dict]) -> list[dict]:
+    public = []
+    for item in manifests:
+        public.append(
+            {
+                "orientation": item["orientation"],
+                "width": item["width"],
+                "height": item["height"],
+                "duration": round(float(item["duration"]), 3),
+                "bytes": item["bytes"],
+                "url": f"/api/jobs/{job_id}/media/{item['orientation']}",
+            }
+        )
+    return public
 
 
 def _done_stages():
@@ -385,7 +423,6 @@ def _guarded(job_id: str, store: JobStore, settings, work) -> None:
         store.update_status(
             job_id,
             state="error",
-            progress=0,
             message=public_message(exc),
             error_type=type(exc).__name__,
             retry_available=source.exists(),

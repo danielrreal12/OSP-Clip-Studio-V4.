@@ -29,6 +29,21 @@ class OpenAIProvider:
         self.settings = settings
         self._client = client
 
+    def check_access(self) -> None:
+        """Reject a bad key before the slow measurement pass starts."""
+        from openai import APIConnectionError, APIStatusError, AuthenticationError
+
+        try:
+            self.client().models.retrieve(self.settings.vision_model)
+        except AuthenticationError as exc:
+            raise ConfigurationError("OPENAI_API_KEY was rejected. Check the key on the server.") from exc
+        except APIStatusError as exc:
+            if exc.status_code in {401, 403}:
+                raise ConfigurationError("OPENAI_API_KEY was rejected. Check the key on the server.") from exc
+            log.warning("Key check returned HTTP %s; the edit will continue", exc.status_code)
+        except APIConnectionError as exc:
+            raise ProviderError("Could not reach the AI provider to check the key.") from exc
+
     def client(self):
         if self._client is not None:
             return self._client

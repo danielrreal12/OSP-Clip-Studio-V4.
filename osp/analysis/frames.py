@@ -54,28 +54,42 @@ def select_timestamps(scenes: list[dict], samples: list[dict], limit: int) -> li
 
 
 def extract_jpeg(source: Path, timestamp: float, dest: Path, width: int = 512) -> bool:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg",
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-ss",
-        f"{max(0.0, timestamp):.3f}",
-        "-i",
-        str(source),
-        "-frames:v",
-        "1",
-        "-vf",
-        f"scale={width}:-2",
-        "-q:v",
-        "5",
-        str(dest),
-    ]
-    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40, check=False)
-    return proc.returncode == 0 and dest.exists() and dest.stat().st_size > 500
+    written = extract_jpegs(source, [timestamp], dest.parent, width=width, names=[dest.name])
+    return bool(written)
+
+
+def extract_jpegs(
+    source: Path,
+    timestamps: list[float],
+    directory: Path,
+    width: int = 512,
+    names: list[str] | None = None,
+) -> list[Path]:
+    """One FFmpeg process seeks each timestamp. Starting it once is the saving."""
+    directory.mkdir(parents=True, exist_ok=True)
+    if not timestamps:
+        return []
+    dests = [directory / (names[index] if names else f"{index:03d}.jpg") for index in range(len(timestamps))]
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+    for timestamp in timestamps:
+        cmd.extend(["-ss", f"{max(0.0, timestamp):.3f}", "-i", str(source)])
+    for index, dest in enumerate(dests):
+        cmd.extend(
+            [
+                "-map",
+                f"{index}:v:0",
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale={width}:-2",
+                "-q:v",
+                "5",
+                str(dest),
+            ]
+        )
+    timeout = max(40, 12 * len(timestamps))
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
+    return [dest for dest in dests if dest.exists() and dest.stat().st_size > 500]
 
 
 def suggested_exposure(luma: float) -> float:

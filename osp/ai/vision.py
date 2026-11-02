@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from osp.ai.prompts import VISION_SYSTEM
-from osp.analysis.frames import extract_jpeg
+from osp.analysis.frames import extract_jpeg, extract_jpegs
 from osp.errors import BudgetExceeded, MediaError, ProviderError
 
 log = logging.getLogger("osp.ai.vision")
@@ -40,10 +40,12 @@ def _clamp(value, low, high, default):
 
 
 def prepare_frames(source: Path, timestamps: list[float], directory: Path, width: int) -> list[dict]:
+    written = extract_jpegs(source, timestamps, directory, width=width)
+    by_name = {path.name: path for path in written}
     frames = []
     for index, timestamp in enumerate(timestamps):
-        dest = directory / f"{index:03d}.jpg"
-        if not extract_jpeg(source, timestamp, dest, width=width):
+        dest = by_name.get(f"{index:03d}.jpg")
+        if dest is None:
             continue
         frames.append(
             {
@@ -148,7 +150,7 @@ def analyze_frames(provider, settings, ledger, source: Path, frames: list[dict],
             prompt_tokens=usage["prompt_tokens"],
             completion_tokens=usage["completion_tokens"],
         )
-        ledger.frames_analyzed += len(batch)
+        ledger.add_frames(len(batch))
         notes.extend(normalize_vision(parsed, [frame["timestamp"] for frame in batch]))
     closer = [
         note
@@ -186,7 +188,7 @@ def analyze_frames(provider, settings, ledger, source: Path, frames: list[dict],
             prompt_tokens=usage["prompt_tokens"],
             completion_tokens=usage["completion_tokens"],
         )
-        ledger.closeups += 1
+        ledger.add_closeup()
         replacement = normalize_vision(parsed, [note["timestamp"]])
         if replacement:
             notes = [replacement[0] if item["timestamp"] == note["timestamp"] else item for item in notes]

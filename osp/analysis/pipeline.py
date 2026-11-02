@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from osp.analysis.audio import analyze_audio
@@ -52,15 +54,6 @@ def analyze_media(source: Path, *, filename: str = "", on_stage=None) -> dict:
         raise MediaError("The video duration could not be read.")
     stage("quality", "Scoring exposure, blur, and black frames")
     log.info("sampling visual quality for %.1fs", duration)
-    raw_samples = sample_quality(source, duration)
-    if not raw_samples:
-        raise MediaError("No frames could be sampled from this video.")
-    stage("scenes", "Detecting shots")
-    log.info("detecting shots")
-    scenes = detect_scenes(source, raw_samples, duration)
-    stage("motion", "Measuring camera movement")
-    scenes = annotate_scenes(source, scenes)
-    scene_rows = [_scene_stats(scene, raw_samples) for scene in scenes]
     audio = {
         "mean_volume_db": None,
         "max_volume_db": None,
@@ -69,14 +62,29 @@ def analyze_media(source: Path, *, filename: str = "", on_stage=None) -> dict:
         "energy": [],
         "sound_events": [],
     }
-    stage("audio", "Analyzing silence, loudness, and sound")
-    if probed["has_audio"]:
-        log.info("analyzing audio")
-        try:
-            audio = analyze_audio(source, duration)
-        except Exception as exc:
-            log.exception("Audio analysis failed")
-            raise MediaError("Audio analysis failed.") from exc
+    # Picture and sound are measured together. The audio pass does not decode video.
+    with tempfile.TemporaryDirectory() as tmp:
+        proxy = Path(tmp) / "proxy.mp4"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            audio_future = pool.submit(analyze_audio, source, duration) if probed["has_audio"] else None
+            raw_samples = sample_quality(source, duration, proxy=proxy)
+            if not raw_samples:
+                raise MediaError("No frames could be sampled from this video.")
+            stage("scenes", "Detecting shots")
+            log.info("detecting shots")
+            scene_source = proxy if proxy.exists() and proxy.stat().st_size > 1000 else source
+            scenes = detect_scenes(scene_source, raw_samples, duration)
+            stage("motion", "Measuring camera movement")
+            scenes = annotate_scenes(scenes, raw_samples)
+            if audio_future is not None:
+                try:
+                    audio = audio_future.result()
+                except Exception as exc:
+                    log.exception("Audio analysis failed")
+                    raise MediaError("Audio analysis failed.") from exc
+    for sample in raw_samples:
+        sample.pop("frame", None)
+    scene_rows = [_scene_stats(scene, raw_samples) for scene in scenes]
     return {
         "duration": round(duration, 3),
         "rotation": probed["rotation"],

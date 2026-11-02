@@ -9,6 +9,26 @@ def _app(settings, provider):
     return app
 
 
+def test_failed_job_keeps_progress(settings):
+    from osp.errors import ConfigurationError
+    from osp.jobs.pipeline import _guarded
+    from osp.jobs.store import JobStore
+
+    store = JobStore(settings.work_dir)
+    job = "ab" * 16
+    store.create(job, {"mode": "highlights", "orientation": "portrait", "source_file": "source.mp4"})
+    store.mark_stage(job, "vision", "Watching the frames")
+
+    def fail():
+        raise ConfigurationError("OPENAI_API_KEY was rejected. Check the key on the server.")
+
+    _guarded(job, store, settings, fail)
+    status = store.read_status(job)
+    assert status["state"] == "error"
+    assert status["progress"] == 55
+    assert "rejected" in status["message"]
+
+
 def test_health_and_missing_key(settings):
     settings.openai_api_key = ""
     app = create_app(settings)
