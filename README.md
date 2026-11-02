@@ -1,27 +1,95 @@
-# OSP Clip Studio V4
+# OSP Clip Studio V6
 
-## What actually works
-- One-tap upload and export of MP4; vertical 9:16 or horizontal 16:9.
-- Night denoising and exposure adjustment, cinematic/punchy/clean grading.
-- FFmpeg audio loudness normalization; optional licensed MP3 background mix.
-- Optional OpenAI Whisper transcription with burned-in segment captions.
-- Optional AI-written title and social caption.
-- Job progress polling and download.
+Autonomous editor for outside-plant video: fiber, coax, CATV, poles, buckets, splicing, and the rest of the field work. The app measures the file, asks a vision model what the frames show, transcribes speech, and only then asks a director model for a timestamped plan. FFmpeg executes that plan. It does not run model-written shell commands, and it does not grade the whole video with a preset.
 
-## Not implemented
-This build does **not** do intelligent visual scene selection, beat-synced cuts, motion-blur transitions, speed ramps, voice separation, or animated word-by-word subtitles. AI planning sees a transcript, not video frames. These are future upgrades, not current features.
+V4 color presets (`night`, `cinematic`, `punchy`, `clean`) are gone. A client that still posts `style` gets a warning and an edit based on the footage.
 
-## GitHub/Render deployment
-1. Back up existing V3 repository. Replace root `server.py`, `requirements.txt`, `Dockerfile`, `render.yaml`, and add `templates/index.html`. Remove or leave old `index.html` unused. Keep Render service name consistent with existing service.
-2. Render: use **Docker** runtime. If current service is a Python runtime, you may need a new Docker web service; Render runtime changes may not be supported in-place.
-3. In Render Environment, add `OPENAI_API_KEY` as a secret. Never commit API keys to GitHub. Without the key, video processing still works, but AI transcription and edit planning are disabled.
-4. Set a paid Render instance with enough CPU/RAM for FFmpeg; start with Starter and upgrade if renders time out or exhaust memory. Render free instances can spin down and have ephemeral storage.
-5. Visit `/health` to verify `version: 4.0`. Upload a short sample video before attempting large videos.
+## What it does
 
-## Limitations and operations
-- Files are stored temporarily on the instance filesystem and can disappear on restart/redeploy. This version has no automatic cleanup, authentication, job queue persistence, or per-user isolation. It is intended for **private/testing use**, not public production deployment.
-- For production, add authentication, background workers, object storage, rate limits, job cleanup, and upload scanning.
-- Render may impose request duration, proxy body size, and resource limits. Large mobile uploads may fail; test with short clips.
-- AI usage is billed separately by OpenAI according to transcription and text-token pricing. Render hosting is billed separately. Music is user-provided; do not upload copyrighted tracks without rights.
-- Captions require audio, API key, and successful transcription; subtitle rendering requires FFmpeg libass (included in standard Debian ffmpeg package).
-- This build has no client-side upload persistence. Keep Safari open until upload completes; once upload finishes, processing runs server-side, but restarting Render loses in-memory jobs.
+1. **Measure.** PySceneDetect finds shot changes. A histogram pass adds any hard cut it missed. OpenCV reads luminance, blur, and sparse optical flow. FFmpeg measures silence, loudness, clipping, and a half-second energy curve.
+2. **Watch.** A small set of JPEGs (capped by `BUDGET_MAX_FRAMES`) goes to a vision model at low detail. Up to `BUDGET_MAX_CLOSEUPS` frames can be sent again larger if the model flags a real work detail.
+3. **Listen.** Speech audio is transcribed with word timestamps when the provider supports them. Filler words are marked from those timestamps. Silent files skip transcription and say so.
+4. **Decide.** The director model returns JSON. The schema rejects anything outside the source, unrealistic speed changes, and private-looking titles. The server then trims black frames and dead air, locks speech to natural speed, attaches transcript words as captions, and blurs plates, addresses, documents, or customer faces only where the vision notes included a box.
+5. **Render.** Each kept span is reframed, graded mildly, captioned, and joined. Dissolves are rare. Music, if you upload a track you have rights to, is ducked under speech. Portrait and landscape are separate encodes, one after the other, so a small instance is not asked to do both at once.
+6. **Review.** The export is checked for black frames, exposure, duration, audio sync, clipping, caption burn-in, transition count, and word-splitting cuts. A failed check revises the plan deterministically and renders again, inside `BUDGET_MAX_RETRIES` and `BUDGET_MAX_RENDER_SEC`.
+
+If `OPENAI_API_KEY` is missing, upload returns **503** and the page explains that autonomous editing did not run. Nothing is substituted.
+
+The director is told the filename is not evidence and that it must not invent work, addresses, or completion. That is a model instruction plus schema checks. It is not a guarantee. Review an export before you publish it. Blur boxes are only as good as the vision notes.
+
+## Run locally
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo apt-get install -y ffmpeg fonts-dejavu-core   # Debian/Ubuntu
+export OPENAI_API_KEY=sk-...
+export WORK_DIR=/tmp/osp-v6
+python server.py
+```
+
+Open `http://localhost:10000`. Health is `/health`.
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Tests use a local stand-in that still has to read the measured evidence. They do not call OpenAI. Production code has no offline edit plan.
+
+## Render
+
+`render.yaml` is a Docker web service with a 10 GB disk mounted at `/var/data` and `WORK_DIR=/var/data/osp`. Set `OPENAI_API_KEY` in the Render dashboard. Do not put the key in git.
+
+This repo was not deployed to Render from here. After you merge and deploy, check `/health` (`ok: true`, `ai_configured: true`) and run one short clip before a long one. A Starter instance is enough for one 720p encode at a time. `MAX_CONCURRENT_JOBS` defaults to 1 because FFmpeg is the memory limit. Free instances sleep and lose a disk that is not attached; without the disk, files live under `/tmp` and disappear on restart.
+
+A restart marks an in-progress job as interrupted. The upload is kept until `JOB_TTL_HOURS` (48). Use **Retry** so a second model call only happens when you ask for it.
+
+## Environment
+
+See `.env.example`. The ones that matter:
+
+| Variable | Role |
+| --- | --- |
+| `OPENAI_API_KEY` | Required for an autonomous edit |
+| `AI_PROVIDER` | `openai` only. `AI_BASE_URL` is optional for a compatible endpoint |
+| `VISION_MODEL`, `DIRECTOR_MODEL`, `TRANSCRIBE_MODEL` | Default `gpt-4o-mini` and `whisper-1` |
+| `WORK_DIR` | Job files, status, and outputs |
+| `MAX_UPLOAD_MB`, `MAX_DURATION_SEC` | Default 250 MB and 10 minutes |
+| `BUDGET_MAX_FRAMES`, `BUDGET_MAX_TOKENS`, `BUDGET_MAX_COST_USD` | Hard stops |
+| `BUDGET_MAX_RETRIES`, `BUDGET_MAX_RENDER_SEC` | Quality-review loop |
+| `AI_PRICE_JSON` | Optional rate overrides |
+
+Costs shown in the UI are **estimates** from published 2025 list rates (`gpt-4o-mini` input $0.15 / output $0.60 per million tokens, Whisper $0.006 per minute) plus the token counts the API actually returned. Check them against your invoice. Override the table with `AI_PRICE_JSON` when your prices differ. Unknown chat models are priced like `gpt-4o-mini` and flagged.
+
+## API
+
+- `POST /api/jobs` with `video`, optional `music`, `mode` (`highlights` or `full`), `orientation` (`portrait`, `landscape`, `both`), and `instructions`.
+- `GET /api/jobs/<id>` progress, cost, warnings.
+- `GET /api/jobs/<id>/plan` the plan plus what the models saw.
+- `PUT /api/jobs/<id>/plan` with `{ "segments": [{ "keep", "source_start", "source_end" }] }` re-renders without another model call. Edges can still snap off black frames and mid-word cuts.
+- `POST /api/jobs/<id>/redirect` with `{ "instructions" }` runs the director again. That spends more tokens.
+- `POST /api/jobs/<id>/retry` after an error, using the stored upload.
+- `GET /api/jobs/<id>/media/source|portrait|landscape` and `?download=1`.
+- `POST /api/create`, `GET /api/status/<id>`, and `GET /download/<id>` still work for older clients.
+
+Job URLs are unguessable and there is no login. Treat the service as private.
+
+## Layout
+
+- `osp/analysis` — probe, scenes, motion, picture, sound. No model calls.
+- `osp/ai` — vision, speech, director prompts, OpenAI client.
+- `osp/schema.py` — the only plan the renderer will accept.
+- `osp/render` — FFmpeg.
+- `osp/qa` — export checks.
+- `osp/jobs` — status files and the pipeline.
+- `templates/` and `static/` — the phone and Chromebook UI.
+
+## Limits
+
+- One encode at a time, 720p, one FFmpeg thread, by default.
+- Highlights default to 45 seconds or less. Full mode keeps useful time and drops dead air; it does not promise a frame-accurate copy of a 10 minute tape.
+- Word-level captions need provider word timestamps. Otherwise captions use real segment times, or they are turned off.
+- Sensitive blur only runs when the vision model returns a box. A plate it did not mark can still be in frame.
+- Render was not verified on your live Render service.
