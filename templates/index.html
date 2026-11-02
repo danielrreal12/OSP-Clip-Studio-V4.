@@ -1,1 +1,69 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#090b12"><title>OSP Clip Studio V4</title><style>*{box-sizing:border-box}body{margin:0;background:#090b12;color:#f7f8fc;font:16px -apple-system,BlinkMacSystemFont,Arial,sans-serif}.wrap{max-width:580px;margin:auto;padding:24px 18px 60px}.brand{font-size:13px;letter-spacing:3px;color:#a59cff;font-weight:800}.hero{font-size:36px;line-height:1.08;margin:18px 0 10px}.muted{color:#a2a8bb;line-height:1.5}.panel{background:#171a25;border:1px solid #303449;border-radius:22px;padding:20px;margin-top:22px}.drop{display:block;border:2px dashed #6265a5;border-radius:16px;padding:27px 16px;text-align:center;background:#222438;cursor:pointer}.drop input{display:none}.drop b{display:block;font-size:19px;margin-bottom:7px}.drop small{color:#b2b5c9}.field{margin-top:20px}.field label{display:block;font-weight:700;margin-bottom:10px}select,input[type=file]{width:100%;background:#252938;color:white;border:1px solid #454a62;border-radius:12px;padding:13px;font-size:16px}.check{display:flex;align-items:center;gap:12px;margin:16px 0;color:#d9dbea}.check input{width:20px;height:20px;accent-color:#9c85ff}button{width:100%;background:linear-gradient(110deg,#7458ef,#c052f2);border:0;border-radius:14px;color:white;padding:17px;font-size:18px;font-weight:800;margin-top:18px}button:disabled{opacity:.5}.status{display:none;margin-top:20px}.bar{background:#35384a;height:10px;border-radius:10px;overflow:hidden}.fill{height:100%;background:#b08aff;width:0;transition:width .5s}a.download{display:block;background:#32b38a;color:#081711;text-align:center;padding:16px;border-radius:14px;font-weight:800;text-decoration:none;margin-top:18px}.tag{display:inline-block;background:#2a2742;color:#c7bbff;border-radius:20px;padding:7px 12px;font-size:12px;font-weight:700}video{width:100%;border-radius:14px;margin-top:14px}#warning{color:#f9c86b}</style></head><body><main class="wrap"><div class="brand">OSP CLIP STUDIO · V4</div><h1 class="hero">One tap.<br>Pro-level edits.</h1><p class="muted">AI-assisted planning, polished color, cleaner audio, and cinematic night footage. Made for your iPhone.</p><span class="tag">{{ 'AI CONNECTED' if ai else 'LOCAL EDITING · ADD API KEY FOR AI' }}</span><form id="form" class="panel"><label class="drop">🎬<b id="filename">Choose your video</b><small>MP4 / MOV / WEBM · Max {{max_mb}} MB · 10 min</small><input type="file" id="video" name="video" accept="video/*" required></label><div class="field"><label for="style">Edit style</label><select id="style" name="style"><option value="night">🌙 Night Pro — brighten and clean night footage</option><option value="cinematic">🎞 Cinematic — film-style contrast</option><option value="punchy">⚡ Punchy — vibrant short-form look</option><option value="clean">✨ Clean — natural polished footage</option></select></div><label class="check"><input type="checkbox" id="captions" checked>AI speech captions (requires API key)</label><label class="check"><input type="checkbox" id="vertical" checked>Vertical 9:16 export for Reels / TikTok</label><div class="field"><label for="music">Optional background music (MP3 you own rights to)</label><input id="music" name="music" type="file" accept="audio/mpeg"></div><button id="submit" type="submit">✨ Create My Video</button><div class="status" id="status"><p id="message">Uploading…</p><div class="bar"><div class="fill" id="fill"></div></div><p id="warning"></p><div id="result"></div></div></form><p class="muted" style="font-size:13px">V4 renders actual FFmpeg color and audio enhancements. AI transcribes speech and suggests a title/caption; it does not yet perform frame-aware scene selection, beat-synced cuts, motion transitions, or word-by-word animations.</p></main><script>const form=document.querySelector('#form'),video=document.querySelector('#video'),btn=document.querySelector('#submit'),statusBox=document.querySelector('#status'),message=document.querySelector('#message'),fill=document.querySelector('#fill'),result=document.querySelector('#result');video.onchange=()=>document.querySelector('#filename').textContent=video.files[0]?.name||'Choose your video';form.onsubmit=async e=>{e.preventDefault();if(!video.files.length)return;btn.disabled=true;statusBox.style.display='block';result.innerHTML='';message.textContent='Uploading video…';fill.style.width='3%';try{const data=new FormData();data.append('video',video.files[0]);data.append('style',document.querySelector('#style').value);data.append('captions',document.querySelector('#captions').checked);data.append('vertical',document.querySelector('#vertical').checked);const m=document.querySelector('#music').files[0];if(m)data.append('music',m);const r=await fetch('/api/create',{method:'POST',body:data});const j=await r.json();if(!r.ok)throw Error(j.error||'Upload failed');let timer=setInterval(async()=>{try{const q=await fetch('/api/status/'+j.job),s=await q.json();message.textContent=s.message||s.state;fill.style.width=(s.progress||0)+'%';document.querySelector('#warning').textContent=s.warning||'';if(s.state==='done'||s.state==='error'){clearInterval(timer);btn.disabled=false;if(s.state==='done'){result.innerHTML='<h3>🎉 Your edit is ready</h3><p>'+escapeHtml(s.title||'')+'</p><p>'+escapeHtml(s.caption||'')+'</p><a class="download" href="'+s.download+'">Download edited MP4</a><video controls playsinline src="'+s.download+'"></video>'}else message.textContent='Error: '+s.message}}catch(err){clearInterval(timer);btn.disabled=false;message.textContent='Connection lost. Please retry.'}},2500)}catch(err){btn.disabled=false;message.textContent=err.message}};function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12160d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>OSP Clip Studio</title>
+  <link rel="stylesheet" href="/static/studio.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div>
+        <p class="eyebrow">OSP Clip Studio</p>
+        <p class="version" id="version">V6</p>
+      </div>
+    </div>
+    <p class="tagline">Autonomous editor for fiber, coax, and outside-plant footage.</p>
+  </header>
+  <main class="layout">
+    <section class="card" aria-labelledby="upload-title">
+      <h1 id="upload-title">Edit from the footage</h1>
+      <p class="lede">The cut is decided from shots, motion, speech, and what is actually in the frames. Presets are not applied.</p>
+      <div id="config-banner" class="banner" hidden></div>
+      <form id="form">
+        <label class="drop" id="drop">
+          <input id="video" name="video" type="file" accept="video/*" required>
+          <span class="drop-title" id="filename">Drop a video or choose one</span>
+          <span class="drop-meta" id="file-meta">MP4, MOV, WEBM · phone or Chromebook</span>
+        </label>
+        <fieldset class="choice">
+          <legend>Edit</legend>
+          <label><input type="radio" name="mode" value="highlights" checked> Highlights</label>
+          <label><input type="radio" name="mode" value="full"> Full job, dead time removed</label>
+        </fieldset>
+        <fieldset class="choice">
+          <legend>Export</legend>
+          <label><input type="radio" name="orientation" value="both" checked> Portrait and landscape</label>
+          <label><input type="radio" name="orientation" value="portrait"> Portrait</label>
+          <label><input type="radio" name="orientation" value="landscape"> Landscape</label>
+        </fieldset>
+        <label class="stack" for="instructions">Instructions</label>
+        <textarea id="instructions" name="instructions" maxlength="2000" placeholder="Example: Keep the splice and the pole work, cut the silence, captions on, no music over speech."></textarea>
+        <label class="stack" for="music">Music you have rights to <span>optional</span></label>
+        <input id="music" name="music" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac">
+        <p class="estimate" id="estimate"></p>
+        <button id="submit" type="submit">Create the edit</button>
+      </form>
+    </section>
+    <section class="card" id="job" hidden aria-live="polite">
+      <div class="job-head">
+        <h2 id="job-title">Working</h2>
+        <p id="job-message"></p>
+      </div>
+      <div class="bar" aria-hidden="true"><div id="fill"></div></div>
+      <ol id="stages" class="stages"></ol>
+      <div id="alert" class="banner bad" hidden></div>
+      <ul id="warnings" class="warnings"></ul>
+      <div id="cost" class="cost" hidden></div>
+      <div id="plan" hidden></div>
+      <div id="compare" class="compare" hidden></div>
+      <div id="actions" class="actions" hidden></div>
+    </section>
+  </main>
+  <script src="/static/studio.js"></script>
+</body>
+</html>

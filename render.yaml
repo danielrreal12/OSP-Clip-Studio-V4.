@@ -4,10 +4,44 @@ services:
     runtime: docker
     plan: starter
     healthCheckPath: /health
+    disk:
+      name: osp-data
+      mountPath: /var/data
+      sizeGB: 10
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+      - key: AI_PROVIDER
+        value: openai
+      - key: VISION_MODEL
+        value: gpt-4o-mini
+      - key: DIRECTOR_MODEL
+        value: gpt-4o-mini
+      - key: TRANSCRIBE_MODEL
+        value: whisper-1
+      - key: WORK_DIR
+        value: /var/data/osp
       - key: MAX_UPLOAD_MB
-        value: '250'
+        value: "250"
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      - key: MAX_QUEUED_JOBS
+        value: "3"
       - key: WEB_CONCURRENCY
-        value: '1'
+        value: "1"
+      - key: BUDGET_MAX_FRAMES
+        value: "16"
+      - key: BUDGET_MAX_CLOSEUPS
+        value: "2"
+      - key: BUDGET_MAX_TOKENS
+        value: "80000"
+      - key: BUDGET_MAX_COST_USD
+        value: "1.50"
+      - key: BUDGET_MAX_RETRIES
+        value: "2"
+      - key: BUDGET_MAX_RENDER_SEC
+        value: "900"
+      - key: ENCODE_PRESET
+        value: veryfast
+      - key: JOB_TTL_HOURS
+        value: "48"
