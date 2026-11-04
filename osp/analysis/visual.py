@@ -14,15 +14,20 @@ WIDTH = 160
 HEIGHT = 90
 
 
-def iter_gray_frames(path: Path, fps: float, limit: int = 2400):
+def iter_gray_frames(path: Path, fps: float, limit: int = 2400, proxy: Path | None = None):
+    # One decode feeds the measurements. The optional proxy is a small file
+    # PySceneDetect can read instead of scanning the original again.
     cmd = [
         "ffmpeg",
         "-nostdin",
         "-hide_banner",
         "-loglevel",
         "error",
+        "-y",
         "-i",
         str(path),
+        "-map",
+        "0:v:0",
         "-vf",
         f"fps={fps},scale={WIDTH}:{HEIGHT},format=gray",
         "-f",
@@ -31,6 +36,25 @@ def iter_gray_frames(path: Path, fps: float, limit: int = 2400):
         "gray",
         "pipe:1",
     ]
+    if proxy is not None:
+        cmd.extend(
+            [
+                "-map",
+                "0:v:0",
+                "-an",
+                "-vf",
+                "fps=8,scale=480:-2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "32",
+                "-pix_fmt",
+                "yuv420p",
+                str(proxy),
+            ]
+        )
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     frame_size = WIDTH * HEIGHT
     index = 0
@@ -43,12 +67,16 @@ def iter_gray_frames(path: Path, fps: float, limit: int = 2400):
             yield index / fps, np.frombuffer(buf, dtype=np.uint8).reshape(HEIGHT, WIDTH).copy()
             index += 1
     finally:
-        if proc.poll() is None:
+        if proc.stdout:
+            proc.stdout.close()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
             proc.kill()
-        proc.wait(timeout=10)
+            proc.wait(timeout=10)
 
 
-def sample_quality(path: Path, duration: float) -> list[dict]:
+def sample_quality(path: Path, duration: float, proxy: Path | None = None) -> list[dict]:
     import cv2
 
     if duration <= 0:
@@ -61,7 +89,7 @@ def sample_quality(path: Path, duration: float) -> list[dict]:
         fps = 0.5
     samples = []
     try:
-        frames = iter_gray_frames(path, fps)
+        frames = iter_gray_frames(path, fps, proxy=proxy)
         for timestamp, frame in frames:
             luma = float(frame.mean())
             sharpness = float(cv2.Laplacian(frame, cv2.CV_64F).var())
@@ -75,6 +103,7 @@ def sample_quality(path: Path, duration: float) -> list[dict]:
                     "sharpness": round(sharpness, 2),
                     "black": luma < 16.0,
                     "hist": hist / total,
+                    "frame": frame,
                 }
             )
     except Exception:

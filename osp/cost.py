@@ -7,6 +7,7 @@ numbers. Actual token counts come from API responses.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 
 # USD.
@@ -43,6 +44,9 @@ class CostLedger:
     render_seconds: float = 0.0
     assumed_price: bool = False
 
+    def __post_init__(self) -> None:
+        self._lock = threading.RLock()
+
     @property
     def actual_usd(self) -> float:
         return round(sum(float(line.get("usd") or 0) for line in self.lines), 6)
@@ -59,7 +63,19 @@ class CostLedger:
     def transcribe_seconds(self) -> float:
         return round(sum(float(line.get("seconds") or 0) for line in self.lines if line.get("kind") == "transcription"), 3)
 
+    def add_frames(self, count: int) -> None:
+        with self._lock:
+            self.frames_analyzed += int(count)
+
+    def add_closeup(self) -> None:
+        with self._lock:
+            self.closeups += 1
+
     def add_tokens(self, *, model: str, kind: str, prompt_tokens: int, completion_tokens: int) -> float:
+        with self._lock:
+            return self._add_tokens(model=model, kind=kind, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+
+    def _add_tokens(self, *, model: str, kind: str, prompt_tokens: int, completion_tokens: int) -> float:
         rates, assumed = _rates(model, self.price_overrides)
         self.assumed_price = self.assumed_price or assumed
         usd = (prompt_tokens / 1_000_000) * float(rates.get("input_per_million") or 0)
@@ -78,6 +94,10 @@ class CostLedger:
         return usd
 
     def add_transcription(self, *, model: str, seconds: float) -> float:
+        with self._lock:
+            return self._add_transcription(model=model, seconds=seconds)
+
+    def _add_transcription(self, *, model: str, seconds: float) -> float:
         rates, assumed = _rates(model, self.price_overrides)
         self.assumed_price = self.assumed_price or assumed
         per_minute = float(rates.get("per_minute") or DEFAULT_PRICES["whisper-1"]["per_minute"])
@@ -94,6 +114,10 @@ class CostLedger:
         return usd
 
     def to_dict(self) -> dict:
+        with self._lock:
+            return self._to_dict()
+
+    def _to_dict(self) -> dict:
         return {
             "estimated_usd": round(self.estimated_usd, 4),
             "actual_usd": round(self.actual_usd, 4),

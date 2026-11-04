@@ -24,20 +24,27 @@ def _run_text(cmd: list[str], timeout: float = 180) -> str:
 
 
 def analyze_audio(path: Path, duration: float) -> dict:
-    silence_log = _run_text(
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-hide_banner",
-            "-i",
-            str(path),
-            "-af",
-            "silencedetect=noise=-36dB:d=0.45,volumedetect",
-            "-f",
-            "null",
-            "-",
-        ]
-    )
+    # One audio-only pass. -vn keeps FFmpeg from decoding the picture again.
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "rms.txt"
+        silence_log = _run_text(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-hide_banner",
+                "-i",
+                str(path),
+                "-vn",
+                "-af",
+                "silencedetect=noise=-36dB:d=0.45,volumedetect,aresample=8000,asetnsamples=n=4000:p=0,"
+                "astats=metadata=1:reset=1,"
+                f"ametadata=print:key=lavfi.astats.Overall.RMS_level:file={report}",
+                "-f",
+                "null",
+                "-",
+            ]
+        )
+        energy = _parse_energy(report.read_text(encoding="utf-8", errors="replace") if report.exists() else "")
     starts = [float(v) for v in _SILENCE_START.findall(silence_log)]
     ends = [float(v) for v in _SILENCE_END.findall(silence_log)]
     silence = []
@@ -49,7 +56,6 @@ def analyze_audio(path: Path, duration: float) -> dict:
     max_match = _MAX.search(silence_log)
     mean_db = float(mean_match.group(1)) if mean_match else None
     max_db = float(max_match.group(1)) if max_match else None
-    energy = _energy_curve(path)
     events = _sound_events(energy)
     return {
         "mean_volume_db": mean_db,
@@ -61,31 +67,7 @@ def analyze_audio(path: Path, duration: float) -> dict:
     }
 
 
-def _energy_curve(path: Path) -> list[dict]:
-    with tempfile.TemporaryDirectory() as tmp:
-        report = Path(tmp) / "rms.txt"
-        cmd = [
-            "ffmpeg",
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(path),
-            "-af",
-            f"aresample=8000,asetnsamples=n=4000:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file={report}",
-            "-f",
-            "null",
-            "-",
-        ]
-        try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180, check=False)
-        except subprocess.TimeoutExpired:
-            log.warning("Energy analysis timed out")
-            return []
-        if not report.exists():
-            return []
-        text = report.read_text(encoding="utf-8", errors="replace")
+def _parse_energy(text: str) -> list[dict]:
     points = []
     timestamp = None
     for line in text.splitlines():
