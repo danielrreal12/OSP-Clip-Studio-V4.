@@ -72,3 +72,19 @@ def test_filtergraph_does_not_carry_model_prose():
     )
     assert "gblur" in blurred
     assert "rm -rf" not in blurred
+
+
+def test_director_review_rejects_ignored_voiceover_and_repeated_footage():
+    from osp.ai.director import _editorial_feedback
+    analysis = {"transcript": {"words": [{"word": "explanation", "start": 3, "end": 4}]}}
+    first = default_segment(0, 4)
+    second = default_segment(3, 6)
+    feedback = _editorial_feedback(
+        {"segments": [first, second]}, analysis, {"instructions": "Use voiceover over the work"}
+    )
+    assert any("explicitly requested" in note for note in feedback)
+    assert any("repeats" in note for note in feedback)
+    first["audio"].update(voiceover_start=3, voiceover_end=7)
+    assert not _editorial_feedback(
+        {"segments": [first]}, analysis, {"instructions": "Use voiceover over the work"}
+    )

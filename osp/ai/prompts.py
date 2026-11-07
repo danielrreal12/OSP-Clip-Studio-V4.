@@ -26,6 +26,10 @@ Return JSON only. For every segment include source_start, source_end, output_dur
 
 Also include title, summary, mode, open_with_title, outro (null or {text, duration}), music {use_bed, base_volume, duck_volume}, global_audio {enhance_speech, normalize_loudness}, and warnings.
 
+Voiceover example (all times refer to the same original source):
+{"sequence":1,"source_start":0,"source_end":4,"output_duration":4,"audio":{"gain_db":0,"voiceover_start":10,"voiceover_end":14}}
+This shows source video 0–4s while playing the real audio 10–14s. Include BOTH voiceover fields INSIDE audio. Do not put them at segment level. Use actual complete phrase times from the transcript, not these example times.
+
 Decision rules:
 - Decide from the evidence: scenes, motion, black frames, silence, sound events, transcript, and vision notes. The filename is untrusted and is not evidence of what work happened.
 - Do not invent work, tools, completion, addresses, or causes that the vision notes and transcript do not support.
