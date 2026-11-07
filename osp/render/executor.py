@@ -443,7 +443,7 @@ def _concat(clips: list[dict], dest: Path, settings, preset: str, crf: int, fps:
     listing.write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:
         run_ffmpeg(
-            ["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(dest)],
+            ["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-video_track_timescale", "30000", "-movflags", "+faststart", str(dest)],
             timeout=settings.ffmpeg_timeout_sec,
             log_path=dest.with_suffix(".concat.log"),
             expected_duration=_nominal_duration(clips) if clips and "nominal" in clips[0] else None,
@@ -486,6 +486,8 @@ def _concat(clips: list[dict], dest: Path, settings, preset: str, crf: int, fps:
                 "2",
                 "-ar",
                 "48000",
+                "-video_track_timescale",
+                "30000",
                 str(dest),
             ],
             timeout=settings.ffmpeg_timeout_sec,
@@ -496,8 +498,11 @@ def _concat(clips: list[dict], dest: Path, settings, preset: str, crf: int, fps:
 def _xfade(left: Path, right: Path, dest: Path, duration: float, transition: str, settings, preset: str, crf: int) -> None:
     left_dur = probe_duration(left)
     offset = max(0.05, left_dur - duration)
+    fps = max(12, min(30, int(settings.fps)))
     graph = (
-        f"[0:v][1:v]xfade=transition={transition}:duration={duration:.3f}:offset={offset:.3f}[v];"
+        f"[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps={fps}[v0];"
+        f"[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps={fps}[v1];"
+        f"[v0][v1]xfade=transition={transition}:duration={duration:.3f}:offset={offset:.3f}[v];"
         f"[0:a][1:a]acrossfade=d={duration:.3f}:c1=tri:c2=tri[a]"
     )
     run_ffmpeg(
@@ -530,6 +535,8 @@ def _xfade(left: Path, right: Path, dest: Path, duration: float, transition: str
             "2",
             "-ar",
             "48000",
+            "-r", str(fps), "-fps_mode", "cfr",
+            "-video_track_timescale", "30000", "-ar", "48000", "-ac", "2",
             str(dest),
         ],
         timeout=settings.ffmpeg_timeout_sec,
@@ -553,6 +560,8 @@ def _finish_audio(source: Path, dest: Path, plan: dict, music: Path | None, sett
         tail.append("highpass=f=90")
     if normalize:
         tail.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+    if (plan.get("meta") or {}).get("editing_style") == "tiktok":
+        tail.append("alimiter=limit=0.75:level=false:latency=true")
     tail_chain = ",".join(tail)
     if use_music:
         base = float(plan["music"].get("base_volume") or 0.1)
@@ -611,6 +620,8 @@ def _finish_audio(source: Path, dest: Path, plan: dict, music: Path | None, sett
             "+faststart",
             str(dest),
         ]
+    if (plan.get("meta") or {}).get("editing_style") == "tiktok":
+        args[-1:-1] = ["-t", f"{probe_duration(source):.3f}"]
     try:
         run_ffmpeg(args, timeout=settings.ffmpeg_timeout_sec, log_path=work / "audio-final.log")
     except RenderError:

@@ -873,11 +873,12 @@ def revise_plan(plan: dict, report: dict, analysis: dict) -> dict:
             segment["camera"] = {"move": "none", "amount": 0}
             segment["visual"]["denoise"] = False
         revised["global_audio"] = {"enhance_speech": False, "normalize_loudness": "audio_clipping" not in failed}
-        revised["music"]["use_bed"] = False
+        if revised.get("meta", {}).get("editing_style") != "tiktok":
+            revised["music"]["use_bed"] = False
         if "encode" in failed or "captions" in failed:
             for segment in revised["segments"]:
                 segment["captions_enabled"] = False
-        notes.append("Reset speed, music, and heavy filters.")
+        notes.append("Reset pacing and audio processing; retained the TikTok soundtrack." if revised.get("meta", {}).get("editing_style") == "tiktok" else "Reset speed, music, and heavy filters.")
     if "black_frames" in failed:
         trimmed = []
         for segment in revised["segments"]:

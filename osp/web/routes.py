@@ -125,6 +125,11 @@ def register_routes(app) -> None:
             return jsonify(error="not_ready", message="The edit plan is not ready yet."), 409
         return jsonify(plan=plan, analysis=public_analysis(_store().read_json(job, "analysis.json")))
 
+    @app.get("/api/jobs/<job>/review")
+    def job_review(job):
+        _status_or_404(job)
+        return jsonify(_store().read_json(job, "qa.json") or {})
+
     @app.put("/api/jobs/<job>/plan")
     def update_plan(job):
         status = _status_or_404(job)

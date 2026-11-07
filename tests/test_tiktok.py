@@ -76,3 +76,41 @@ def test_tiktok_pipeline_adds_music_without_upload(settings, sample_video):
     assert changed["hook"] == "A FIELD CHECK"
     assert changed["segments"][0]["audio"]["mute"]
     app.extensions["gate"].shutdown()
+
+
+def test_audio_repair_retains_tiktok_soundtrack():
+    from osp.schema import revise_plan
+    plan = {
+        "segments": [default_segment(0, 5)], "meta": {"editing_style": "tiktok"},
+        "music": {"use_bed": True}, "global_audio": {"normalize_loudness": True},
+    }
+    revised = revise_plan(plan, {"checks": [{"name": "audio_clipping", "passed": False}]}, {})
+    assert revised["music"]["use_bed"]
+
+
+def test_cut_dissolve_cut_keeps_audio_video_duration_and_soundtrack(settings, tmp_path):
+    from osp.media import probe_media, ffprobe
+    from osp.render.executor import render_edit
+    from osp.qa.review import review_output
+    source = tmp_path / "clock-source.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=15:d=4.5",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=4.5",
+                    "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(source)], check=True)
+    segments = [default_segment(i*1.5, (i+1)*1.5, i+1) for i in range(3)]
+    segments[1]["transition_in"] = {"type": "dissolve", "duration": .16}
+    plan = {"segments": segments, "meta": {"editing_style": "tiktok"}, "title": "THE SIGNAL CHECK",
+            "open_with_title": True, "outro": None,
+            "music": {"use_bed": True, "base_volume": .18},
+            "global_audio": {"enhance_speech": True, "normalize_loudness": True}}
+    bed = make_instrumental(tmp_path / "music.wav", plan)
+    analysis = {"width": 320, "height": 180, "has_audio": True, "duration": 4.5, "transcript": {}, "quality_samples": []}
+    output = tmp_path / "finished.mp4"
+    manifest = render_edit(source=source, plan=plan, analysis=analysis, settings=settings,
+                           work=tmp_path/"render", output=output, orientation="portrait", music=bed)
+    assert abs(probe_media(output)["duration"] - 4.34) < .3
+    report = review_output(output, plan=plan, analysis=analysis, manifest=manifest,
+                           expected_size=(settings.portrait_width, settings.portrait_height))
+    assert report["passed"], report
+    video = next(s for s in ffprobe(output)["streams"] if s["codec_type"] == "video")
+    assert video["time_base"] == "1/30000"
+    assert plan["music"]["use_bed"]
