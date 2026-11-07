@@ -41,10 +41,6 @@ def render_edit(
     has_audio = bool(analysis.get("has_audio"))
     clips: list[dict] = []
     captions_burned = False
-    if plan.get("open_with_title"):
-        path = work / "card-open.mp4"
-        _render_card(plan.get("title") or "Field notes", 1.5, (width, height), path, settings, work, fps, preset, crf)
-        clips.append({"path": path, "transition": {"type": "fade", "duration": 0.2}, "nominal": 1.5})
     for index, segment in enumerate(plan.get("segments") or []):
         if segment.get("chapter_card"):
             card = work / f"card-{index:02d}.mp4"
@@ -81,6 +77,7 @@ def render_edit(
             frame_size=_display_size(analysis),
             timeout=settings.ffmpeg_timeout_sec,
             on_progress=on_progress,
+            title=plan.get("title") if index == 0 and plan.get("open_with_title") else None,
         )
         captions_burned = captions_burned or burned
         clips.append(
@@ -219,6 +216,7 @@ def _render_segment(
     frame_size: tuple[int, int],
     timeout: float,
     on_progress=None,
+    title=None,
 ) -> bool:
     width, height = size
     start = float(segment["source_start"])
@@ -231,6 +229,15 @@ def _render_segment(
     trim_end = trim_start + span
     burned = False
     ass_name = f"seg-{index:02d}.ass"
+    voice = segment.get("audio") or {}
+    is_voiceover = has_audio and "voiceover_start" in voice
+    title_name = None
+    if title and Path(FONT).exists():
+        title_name = f"title-{index:02d}.txt"
+        (work / title_name).write_text(
+            "\n".join(textwrap.wrap(str(title), width=25 if height > width else 40)[:2]),
+            encoding="utf-8",
+        )
     if segment.get("captions_enabled") and segment.get("captions"):
         burned = write_ass(
             segment["captions"],
@@ -238,8 +245,8 @@ def _render_segment(
             width=width,
             height=height,
             placement=segment.get("caption_placement") or "lower",
-            source_start=start,
-            speed=speed,
+            source_start=voice["voiceover_start"] if is_voiceover else start,
+            speed=1.0 if is_voiceover else speed,
             output_duration=out_dur,
         )
     graph, video_label = _segment_graph(
@@ -252,6 +259,9 @@ def _render_segment(
         ass_name=ass_name if burned else None,
         has_audio=has_audio,
         frame_size=frame_size,
+        audio_input=1 if is_voiceover else 0,
+        audio_trim=(0.0, out_dur) if is_voiceover else None,
+        title_name=title_name,
     )
     args = [
         "-threads",
@@ -263,6 +273,8 @@ def _render_segment(
         "-i",
         str(source),
     ]
+    if is_voiceover:
+        args += ["-ss", f"{voice['voiceover_start']:.3f}", "-vn", "-i", str(source)]
     if not has_audio:
         args += ["-f", "lavfi", "-t", f"{out_dur + 0.2:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
     args += ["-filter_complex", graph, "-map", f"[{video_label}]", "-map", "[a]" if has_audio else "1:a:0"]
@@ -307,7 +319,7 @@ def _render_segment(
     return burned
 
 
-def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name, has_audio, frame_size=(0, 0)) -> tuple[str, str]:
+def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name, has_audio, frame_size=(0, 0), audio_input=0, audio_trim=None, title_name=None) -> tuple[str, str]:
     width, height = size
     pieces = [f"[0:v]trim=start={trim_start:.3f}:end={trim_end:.3f},setpts=PTS-STARTPTS[v0]"]
     blur, label = blur_steps(segment.get("blur_regions") or [], "v0", frame_size[0], frame_size[1])
@@ -319,19 +331,27 @@ def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name,
         tail.append(f"fps={fps}")
     if abs(speed - 1) > 0.03:
         tail.append(f"setpts={1 / speed:.5f}*PTS")
+    if title_name:
+        fontsize = max(18, int(width * (0.05 if height > width else 0.035)))
+        tail.append(
+            f"drawtext=fontfile={FONT}:textfile={title_name}:expansion=none:"
+            f"fontsize={fontsize}:fontcolor=white:box=1:boxcolor=black@0.55:"
+            f"boxborderw=12:x=(w-text_w)/2:y=h*0.09:enable='between(t,0,2.8)'"
+        )
     if ass_name:
         tail.append(f"subtitles={ass_name}")
     tail.append("format=yuv420p,setsar=1")
     pieces.append(f"[{label}]{','.join(tail)}[v]")
     if has_audio:
-        audio = [f"atrim=start={trim_start:.3f}:end={trim_end:.3f}", "asetpts=PTS-STARTPTS"]
+        a_start, a_end = audio_trim if audio_trim is not None else (trim_start, trim_end)
+        audio = [f"atrim=start={a_start:.3f}:end={a_end:.3f}", "asetpts=PTS-STARTPTS"]
         gain = float(segment.get("audio", {}).get("gain_db") or 0)
         if abs(gain) >= 0.2:
             audio.append(f"volume={gain:.2f}dB")
-        if abs(speed - 1) > 0.03:
+        if audio_trim is None and abs(speed - 1) > 0.03:
             audio.append(f"atempo={max(0.5, min(2.0, speed)):.4f}")
         audio.append("aformat=sample_rates=48000:channel_layouts=stereo")
-        pieces.append(f"[0:a]{','.join(audio)}[a]")
+        pieces.append(f"[{audio_input}:a]{','.join(audio)}[a]")
     return ";".join(pieces), "v"
 
 

@@ -28,12 +28,13 @@
         <label class="drop" id="drop">
           <input id="video" name="video" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm,.mkv">
           <span class="drop-title" id="filename">Drop a video or choose one</span>
+          <span class="drop-meta" id="upload-limit">Up to 800 MB · 10 minutes</span>
           <span class="drop-meta" id="file-meta">MP4, MOV, WEBM · phone or Chromebook</span>
         </label>
         <video id="source-preview" class="source-preview" controls playsinline preload="metadata" hidden></video>
         <fieldset class="choice">
           <legend>Edit</legend>
-          <label><input type="radio" name="mode" value="highlights" checked> Highlights</label>
+          <label><input type="radio" name="mode" value="highlights" checked> Finished highlight</label>
           <label><input type="radio" name="mode" value="full"> Full job, dead time removed</label>
         </fieldset>
         <fieldset class="choice">
@@ -43,7 +44,7 @@
           <label><input type="radio" name="orientation" value="landscape"> Landscape</label>
         </fieldset>
         <label class="stack" for="instructions">Instructions</label>
-        <textarea id="instructions" name="instructions" maxlength="2000" placeholder="Example: Keep the splice and the pole work, cut the silence, captions on, no music over speech."></textarea>
+        <textarea id="instructions" name="instructions" maxlength="2000" placeholder="Example: Open on the best work detail, tell the story in 25 seconds, add readable captions and subtle camera movement."></textarea>
         <label class="stack" for="music">Music you have rights to <span>optional</span></label>
         <input id="music" name="music" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac">
         <p class="estimate" id="estimate"></p>

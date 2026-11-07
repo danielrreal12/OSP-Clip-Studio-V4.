@@ -1,3 +1,5 @@
+import pytest
+
 from osp.config import Settings
 from osp.errors import PlanValidationError
 from osp.schema import default_segment, refine_plan, sensitive_text
@@ -52,7 +54,7 @@ def test_refine_locks_speech_to_natural_speed_and_rejects_private_titles():
     assert plan["open_with_title"] is False
     assert "[removed]" in plan["summary"]
     assert plan["music"]["use_bed"] is False
-    assert plan["segments"][0]["output_duration"] == plan["segments"][0]["source_end"] - plan["segments"][0]["source_start"]
+    assert plan["segments"][0]["output_duration"] == pytest.approx(plan["segments"][0]["source_end"] - plan["segments"][0]["source_start"])
     assert [item["word"] for item in plan["segments"][0]["captions"]] == ["fiber", "is", "up"]
 
 
@@ -88,3 +90,42 @@ def test_empty_plan_is_rejected():
         assert exc.errors
     else:
         raise AssertionError("expected rejection")
+
+
+
+def test_useful_silent_work_is_not_cut_away():
+    analysis = _analysis()
+    analysis["audio"]["silence"] = [{"start": 0, "end": 9}]
+    segment = default_segment(0, 5)
+    plan = refine_plan({"segments": [segment]}, analysis, _settings(), {"mode": "highlights"})
+    assert plan["segments"][0]["source_start"] == 0
+    assert plan["segments"][0]["source_end"] == 5
+
+
+def test_word_snapping_extends_outward_instead_of_erasing_shot():
+    analysis = _analysis(words=[
+        {"word": "the", "start": 1.0, "end": 1.8},
+        {"word": "cabinet", "start": 1.8, "end": 2.7},
+    ])
+    segment = default_segment(1.4, 2.2)
+    segment["captions_enabled"] = True
+    plan = refine_plan({"segments": [segment]}, analysis, _settings(), {"mode": "highlights"})
+    kept = plan["segments"][0]
+    assert kept["source_start"] == 1
+    assert kept["source_end"] == 2.7
+    assert [word["word"] for word in kept["captions"]] == ["the", "cabinet"]
+
+
+def test_voiceover_captions_follow_audio_instead_of_broll():
+    analysis = _analysis(words=[
+        {"word": "Actual", "start": 1, "end": 1.4},
+        {"word": "explanation", "start": 1.4, "end": 2.5},
+    ])
+    segment = default_segment(6, 7.5)
+    segment["audio"].update(voiceover_start=1, voiceover_end=2.5)
+    segment["captions_enabled"] = True
+    plan = refine_plan({"segments": [segment]}, analysis, _settings(), {"mode": "highlights"})
+    kept = plan["segments"][0]
+    assert kept["source_start"] == 6
+    assert kept["output_duration"] == 1.5
+    assert [word["word"] for word in kept["captions"]] == ["Actual", "explanation"]

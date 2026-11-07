@@ -98,6 +98,9 @@ def register_routes(app) -> None:
 
     @app.post("/api/jobs")
     def create_job():
+        upload_id = request.form.get("upload_id")
+        if upload_id:
+            return current_app.extensions["accept_upload_session"](upload_id, _accept_upload)
         return _accept_upload()
 
     @app.post("/api/create")
@@ -245,7 +248,7 @@ def register_routes(app) -> None:
         return jsonify(error="server", message="The server hit an unexpected error."), 500
 
 
-def _accept_upload(legacy: bool = False):
+def _accept_upload(upload_override=None, legacy: bool = False):
     settings = _settings()
     if not settings.ai_configured:
         return (
@@ -258,7 +261,7 @@ def _accept_upload(legacy: bool = False):
     ip = _client_ip()
     if not current_app.extensions["rates"].allow(ip, settings.rate_limit_uploads, settings.rate_limit_window_sec):
         return jsonify(error="rate_limit", message="Too many uploads from this network. Wait and try again."), 429
-    upload = request.files.get("video")
+    upload = upload_override if upload_override is not None else request.files.get("video")
     if upload is None or not upload.filename:
         return jsonify(error="invalid", message="Choose a video file."), 400
     ext = Path(secure_filename(upload.filename)).suffix.lower()

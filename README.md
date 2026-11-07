@@ -4,6 +4,14 @@ Autonomous editor for outside-plant video: fiber, coax, CATV, poles, buckets, sp
 
 V4 color presets (`night`, `cinematic`, `punchy`, `clean`) are gone. A client that still posts `style` gets a warning and an edit based on the footage.
 
+## Finished edits and 800 MB uploads
+
+Highlights now ask for a complete visual story: a strong opening, useful work detail, complete spoken thoughts, and a meaningful close. Quiet work footage is retained. Speech can play over a better shot from elsewhere in the same source, with captions following that audio. Opening titles overlay footage rather than adding a blank title card. No synthetic narration is generated.
+
+The video limit is **800 MiB** (838,860,800 bytes); the duration limit remains 10 minutes. Browser uploads larger than 32 MiB use 16 MiB chunks stored on disk. If the connection drops, retry with the same file to resume the saved offset. Interrupted staging uploads expire after 24 hours. Music is attached at finalization and retains its separate 30 MiB limit. Staging and finalization temporarily require up to two copies of the source on disk.
+
+For API clients: create a session with `POST /api/uploads` and JSON `{"filename":"clip.mov","size":12345}`, send raw chunks with `PUT /api/uploads/<upload_id>?offset=<byte-offset>`, inspect progress with `GET /api/uploads/<upload_id>`, and submit the normal job form with `upload_id` instead of `video`. Use `DELETE /api/uploads/<upload_id>` to discard a staging upload. Direct multipart video uploads remain supported.
+
 ## Reliability and usability update
 
 - Retry, timeline re-render, and director revision run with the application context they need.
@@ -68,7 +76,7 @@ See `.env.example`. The ones that matter:
 | `AI_PROVIDER` | `openai` only. `AI_BASE_URL` is optional for a compatible endpoint |
 | `VISION_MODEL`, `DIRECTOR_MODEL`, `TRANSCRIBE_MODEL` | Default `gpt-4o-mini` and `whisper-1` |
 | `WORK_DIR` | Job files, status, and outputs |
-| `MAX_UPLOAD_MB`, `MAX_DURATION_SEC` | Default 250 MB and 10 minutes |
+| `MAX_UPLOAD_MB`, `MAX_DURATION_SEC` | Default 800 MB and 10 minutes |
 | `BUDGET_MAX_FRAMES`, `BUDGET_MAX_TOKENS`, `BUDGET_MAX_COST_USD` | Hard stops |
 | `BUDGET_MAX_RETRIES`, `BUDGET_MAX_RENDER_SEC` | Quality-review loop |
 | `AI_PRICE_JSON` | Optional rate overrides |
