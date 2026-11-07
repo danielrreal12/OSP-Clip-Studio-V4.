@@ -211,6 +211,8 @@ def _awkward_cuts(plan: dict, analysis: dict) -> dict:
     bad = 0
     for segment in plan.get("segments") or []:
         voice = segment.get("audio") or {}
+        if voice.get("mute"):
+            continue
         for edge in (float(voice.get("voiceover_start", segment["source_start"])),
                      float(voice.get("voiceover_end", segment["source_end"]))):
             for word in words:

@@ -88,3 +88,26 @@ def test_director_review_rejects_ignored_voiceover_and_repeated_footage():
     assert not _editorial_feedback(
         {"segments": [first]}, analysis, {"instructions": "Use voiceover over the work"}
     )
+
+
+def test_requested_voiceover_is_grounded_in_complete_source_sentence():
+    from osp.ai.editorial import ground_requested_voiceover
+    texts = ["Are", "you", "home", "We", "are", "placing", "internet", "equipment", "today", "Thank", "you"]
+    words = [{"word": word, "start": i, "end": i + 0.8} for i, word in enumerate(texts)]
+    analysis = {
+        "transcript": {"text": "Are you home? We are placing internet equipment today. Thank you.", "words": words},
+        "vision": {"frames": [
+            {"timestamp": 1.5, "summary": "Working on a utility cabinet", "osp_relevance": 0.8},
+            {"timestamp": 10.5, "summary": "Tools inside the equipment cabinet"},
+        ]},
+    }
+    raw = {"segments": [default_segment(0, 6), default_segment(9, 12)]}
+    plan, notes = ground_requested_voiceover(raw, analysis, {"instructions": "Use voiceover over the work"})
+    first = plan["segments"][0]
+    assert first["audio"]["voiceover_start"] == 3
+    assert first["audio"]["voiceover_end"] == 8.8
+    assert first["source_end"] == 5.8
+    assert first["captions_enabled"]
+    assert plan["segments"][1]["audio"]["mute"]
+    assert notes
+    assert "voiceover_start" not in raw["segments"][0]["audio"]

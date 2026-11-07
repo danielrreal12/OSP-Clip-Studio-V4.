@@ -6,6 +6,7 @@ import json
 import logging
 
 from osp.ai.prompts import DIRECTOR_SYSTEM
+from osp.ai.editorial import ground_requested_voiceover
 from osp.errors import BudgetExceeded, PlanValidationError
 from osp.schema import refine_plan
 
@@ -151,7 +152,9 @@ def direct_edit(provider, settings, ledger, analysis: dict, options: dict) -> di
             completion_tokens=usage["completion_tokens"],
         )
         try:
-            plan = refine_plan(parsed, analysis, settings, options)
+            grounded, editorial_notes = ground_requested_voiceover(parsed, analysis, options)
+            plan = refine_plan(grounded, analysis, settings, options)
+            plan["meta"]["refinements"].extend(editorial_notes)
             feedback = _editorial_feedback(plan, analysis, options)
             if feedback:
                 raise PlanValidationError(feedback)
