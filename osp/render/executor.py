@@ -149,7 +149,7 @@ def _render_card(text, duration, size, dest, settings, work, fps, preset, crf) -
     run_ffmpeg(
         [
             "-threads",
-            "2",
+            "1",
             "-filter_threads",
             "1",
             "-f",
@@ -255,7 +255,7 @@ def _render_segment(
     )
     args = [
         "-threads",
-        "2",
+        "1",
         "-filter_threads",
         "1",
         "-ss",
@@ -442,7 +442,7 @@ def _xfade(left: Path, right: Path, dest: Path, duration: float, transition: str
     run_ffmpeg(
         [
             "-threads",
-            "2",
+            "1",
             "-i",
             str(left),
             "-i",

@@ -65,31 +65,24 @@ def extract_jpegs(
     width: int = 512,
     names: list[str] | None = None,
 ) -> list[Path]:
-    """One FFmpeg process seeks each timestamp. Starting it once is the saving."""
+    """Seek stills sequentially so only one source decoder is resident at a time."""
     directory.mkdir(parents=True, exist_ok=True)
-    if not timestamps:
-        return []
-    dests = [directory / (names[index] if names else f"{index:03d}.jpg") for index in range(len(timestamps))]
-    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
-    for timestamp in timestamps:
-        cmd.extend(["-ss", f"{max(0.0, timestamp):.3f}", "-i", str(source)])
-    for index, dest in enumerate(dests):
-        cmd.extend(
-            [
-                "-map",
-                f"{index}:v:0",
-                "-frames:v",
-                "1",
-                "-vf",
-                f"scale={width}:-2",
-                "-q:v",
-                "5",
-                str(dest),
-            ]
+    written = []
+    for index, timestamp in enumerate(timestamps):
+        dest = directory / (names[index] if names else f"{index:03d}.jpg")
+        cmd = [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-threads", "1", "-ss", f"{max(0.0, timestamp):.3f}", "-i", str(source),
+            "-an", "-frames:v", "1", "-filter_threads", "1",
+            "-vf", f"scale={width}:-2", "-threads", "1", "-q:v", "5", str(dest),
+        ]
+        result = subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=40, check=False,
         )
-    timeout = max(40, 12 * len(timestamps))
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
-    return [dest for dest in dests if dest.exists() and dest.stat().st_size > 500]
+        if result.returncode == 0 and dest.exists() and dest.stat().st_size > 500:
+            written.append(dest)
+    return written
 
 
 def suggested_exposure(luma: float) -> float:

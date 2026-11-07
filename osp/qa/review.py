@@ -82,12 +82,18 @@ def _sample_lumas(path: Path, count: int = 8) -> list[float]:
             "error",
             "-ss",
             f"{timestamp:.3f}",
+            "-threads",
+            "1",
             "-i",
             str(path),
+            "-filter_threads",
+            "1",
             "-frames:v",
             "1",
             "-vf",
             f"scale={width}:{height},format=gray",
+            "-threads",
+            "1",
             "-f",
             "rawvideo",
             "-pix_fmt",
@@ -157,7 +163,7 @@ def _audio(path: Path, plan: dict, analysis: dict) -> dict:
 
 def _clipping(path: Path) -> bool:
     proc = subprocess.run(
-        ["ffmpeg", "-nostdin", "-hide_banner", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
+        ["ffmpeg", "-nostdin", "-hide_banner", "-threads", "1", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
         capture_output=True,
         text=True,
         timeout=60,

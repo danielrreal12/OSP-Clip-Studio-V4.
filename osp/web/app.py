@@ -137,6 +137,9 @@ def recover_interrupted(store: JobStore) -> None:
 def create_app(settings: Settings | None = None, provider_factory=None) -> Flask:
     settings = settings or Settings.from_env()
     configure_logging(settings)
+    # Keep OpenCV operations from sizing thread pools to the host CPU count.
+    import cv2
+    cv2.setNumThreads(1)
     settings.work_dir.mkdir(parents=True, exist_ok=True)
     root = Path(__file__).resolve().parents[2]
     app = Flask(

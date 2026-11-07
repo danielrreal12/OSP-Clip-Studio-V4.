@@ -116,7 +116,22 @@ def run_ffmpeg(
     expected_duration: float | None = None,
 ) -> None:
     """Run ffmpeg. `args` excludes the ffmpeg binary itself."""
-    cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-nostats", "-progress", "pipe:1", *args]
+    # Input decoder and output encoder options have separate scopes in FFmpeg.
+    # Cap every input and the final encoder, including two-input transitions.
+    bounded = []
+    for arg in args:
+        if arg == "-i":
+            bounded.extend(["-threads", "1"])
+        bounded.append(arg)
+    bounded[-1:-1] = ["-threads", "1"]
+    if "libx264" in args:
+        # Avoid x264 lookahead retaining dozens of output frames on small instances.
+        bounded[-1:-1] = ["-tune", "zerolatency"]
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostdin", "-y", "-nostats",
+        "-filter_threads", "1", "-filter_complex_threads", "1",
+        "-progress", "pipe:1", *bounded,
+    ]
     log.info("ffmpeg %s", " ".join(args[:12]))
     log_handle = None
     if log_path is not None:
