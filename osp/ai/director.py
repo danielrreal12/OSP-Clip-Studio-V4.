@@ -89,9 +89,21 @@ def _evidence(analysis: dict, options: dict, settings) -> dict:
 
 
 
-def _editorial_feedback(plan: dict, analysis: dict) -> list[str]:
+def _editorial_feedback(plan: dict, analysis: dict, options: dict) -> list[str]:
     feedback = []
     segments = plan["segments"]
+    instructions = (options.get("instructions") or "").lower()
+    if "voiceover" in instructions and (analysis.get("transcript") or {}).get("words"):
+        if not any("voiceover_start" in (segment.get("audio") or {}) for segment in segments):
+            feedback.append("Voiceover was explicitly requested but the plan uses only original shot audio. Put voiceover_start and voiceover_end INSIDE the audio object, and use complete explanation audio over the relevant work images.")
+    for index, segment in enumerate(segments):
+        if any(
+            min(segment["source_end"], earlier["source_end"]) -
+            max(segment["source_start"], earlier["source_start"]) > 0.2
+            for earlier in segments[:index]
+        ):
+            feedback.append("Source footage repeats across adjacent selections. Use distinct work spans and do not repeat narration.")
+            break
     work = [
         note for note in (analysis.get("vision") or {}).get("frames") or []
         if float(note.get("osp_relevance") or 0) >= 0.5 and note.get("timestamp") is not None
@@ -140,11 +152,9 @@ def direct_edit(provider, settings, ledger, analysis: dict, options: dict) -> di
         )
         try:
             plan = refine_plan(parsed, analysis, settings, options)
-            feedback = _editorial_feedback(plan, analysis)
-            if feedback and attempt == 0:
-                raise PlanValidationError(feedback)
+            feedback = _editorial_feedback(plan, analysis, options)
             if feedback:
-                plan["warnings"].extend(feedback)
+                raise PlanValidationError(feedback)
             plan["meta"]["director_model"] = settings.director_model
             plan["meta"]["attempts"] = attempt + 1
             return plan
