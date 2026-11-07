@@ -52,7 +52,7 @@ def rerender_job(job_id: str, store: JobStore, settings, edits: list) -> None:
     _guarded(job_id, store, settings, work)
 
 
-def redirect_job(job_id: str, store: JobStore, settings, provider, instructions: str) -> None:
+def redirect_job(job_id: str, store: JobStore, settings, provider, instructions: str, editing_style: str | None = None, clip_mode: str | None = None, subject_tracking: bool | None = None) -> None:
     def work():
         analysis = store.read_json(job_id, "analysis.json")
         status = store.read_status(job_id) or {}
@@ -62,6 +62,15 @@ def redirect_job(job_id: str, store: JobStore, settings, provider, instructions:
         options["instructions"] = instructions[:2000]
         request = dict(status.get("request") or {})
         request["instructions"] = options["instructions"]
+        if editing_style is not None:
+            options["editing_style"] = editing_style
+            request["editing_style"] = editing_style
+        if clip_mode is not None:
+            options["clip_mode"] = clip_mode
+            request["clip_mode"] = clip_mode
+        if subject_tracking is not None:
+            options["subject_tracking"] = subject_tracking
+            request["subject_tracking"] = subject_tracking
         store.update_status(job_id, request=request)
         ledger = _ledger(settings, float(analysis.get("duration") or 0))
         _restore_spend(ledger, status.get("cost") or {})
@@ -166,15 +175,23 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
         outputs = []
         last_reports = []
         try:
-            for index, orientation in enumerate(orientations):
-                work = store.job_dir(job_id) / "work" / orientation
+            if options.get("clip_mode") == "multiple":
+                from osp.jobs.clips import select_clips
+                exports = [(f"clip-{i+1}", p, "portrait") for i, p in enumerate(select_clips(plan))]
+            else:
+                exports = [(o, plan, o) for o in orientations]
+            for index, (export_name, export_plan, orientation) in enumerate(exports):
+                if options.get("editing_style") == "capcut" and music is not None:
+                    from osp.render.style import align_music_beats
+                    export_plan = align_music_beats(export_plan, analysis, music)
+                work = store.job_dir(job_id) / "work" / export_name
                 if work.exists():
                     shutil.rmtree(work)
                 work.mkdir(parents=True)
-                destination = store.job_dir(job_id) / "output" / f"{orientation}.mp4"
+                destination = store.job_dir(job_id) / "output" / f"{export_name}.mp4"
 
                 def progress(fraction: float, index=index, orientation=orientation) -> None:
-                    span = 8 / max(1, len(orientations))
+                    span = 8 / max(1, len(exports))
                     store.update_status(
                         job_id,
                         progress=min(93, 86 + int(index * span + fraction * span)),
@@ -183,7 +200,7 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
 
                 manifest = render_edit(
                     source=source,
-                    plan=plan,
+                    plan=export_plan,
                     analysis=analysis,
                     settings=settings,
                     work=work,
@@ -195,11 +212,19 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
                 store.mark_stage(job_id, "qa", f"Checking the {orientation} export")
                 report = review_output(
                     Path(manifest["path"]),
-                    plan=plan,
+                    plan=export_plan,
                     analysis=analysis,
                     manifest=manifest,
                     expected_size=_even_size(settings, orientation),
                 )
+                tracking_report = manifest.get("tracking") or {}
+                if tracking_report.get("requested") and tracking_report.get("tracked_segments", 0) < tracking_report.get("segments", 0):
+                    note = "Some shots had too little visual detail to track reliably; their framing was held steady."
+                    if note not in plan.setdefault("warnings", []):
+                        plan["warnings"].append(note)
+                manifest["orientation"] = export_name
+                manifest["title"] = export_plan.get("title", "Highlight")
+                manifest["score"] = (export_plan.get("meta") or {}).get("clip_score")
                 last_reports.append({"orientation": orientation, **report})
                 if not report.get("passed"):
                     # A failed export is revised before the other shape is encoded.
@@ -221,7 +246,7 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
             ]
             outputs = []
         store.write_json(job_id, "qa.json", {"attempts": last_reports, "revision": plan.get("meta", {}).get("revision", 0)})
-        if len(outputs) == len(orientations) and all(item["passed"] for item in last_reports):
+        if len(outputs) == len(exports) and all(item["passed"] for item in last_reports):
             _finish_ok(job_id, store, settings, plan, analysis, outputs, last_reports, ledger, started)
             return
         if attempt >= settings.budget_max_retries:
@@ -266,6 +291,8 @@ def _finish_ok(job_id, store, settings, plan, analysis, outputs, reports, ledger
     for item in outputs:
         public_outputs.append(
             {
+                "title": item.get("title"),
+                "score": item.get("score"),
                 "orientation": item["orientation"],
                 "width": item["width"],
                 "height": item["height"],
@@ -301,6 +328,8 @@ def _public_outputs(job_id: str, manifests: list[dict]) -> list[dict]:
     for item in manifests:
         public.append(
             {
+                "title": item.get("title"),
+                "score": item.get("score"),
                 "orientation": item["orientation"],
                 "width": item["width"],
                 "height": item["height"],
@@ -358,6 +387,9 @@ def _options(status: dict) -> dict:
         "mode": request.get("mode") or "highlights",
         "orientation": request.get("orientation") or "portrait",
         "instructions": request.get("instructions") or "",
+        "editing_style": request.get("editing_style") or "natural",
+        "clip_mode": request.get("clip_mode") or "single",
+        "subject_tracking": bool(request.get("subject_tracking")),
         "has_music": bool(request.get("music_file")),
         "filename": request.get("filename") or "",
     }

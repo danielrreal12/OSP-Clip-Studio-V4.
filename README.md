@@ -4,6 +4,16 @@ Autonomous editor for outside-plant video: fiber, coax, CATV, poles, buckets, sp
 
 V4 color presets (`night`, `cinematic`, `punchy`, `clean`) are gone. A client that still posts `style` gets a warning and an edit based on the footage.
 
+## Social edits and automatic vertical highlights
+
+Choose **CapCut-style** for bold three-word caption groups with a yellow active-word pop, alternating punch-ins and occasional short dissolves. Speech stays at natural speed. An uploaded music track enables measured onset alignment on nearby non-speaking cuts; the app keeps the original pacing when no clear beat is found.
+
+Choose **Up to 3 vertical highlights** to rank and export distinct groups from the AI-selected timeline. Each clip gets its own download and quality check; encodes run sequentially. Short sources may produce fewer clips. Scores reflect the director's importance estimates, not predicted social performance.
+
+Enable **Track the subject** to use the vision-selected work/person box as a seed and track visual features on a 320×180, 4 fps stream. Vertical crop movement is smoothed and clamped to the picture. When tracking loses detail, the app holds framing; it reports untracked shots rather than guessing. This follows visible features, not a guarantee of identity tracking through occlusion.
+
+Existing uploads can use these options by selecting them and clicking **Run the director again**. The stored analysis is reused.
+
 ## Finished edits and 800 MB uploads
 
 Highlights now ask for a complete visual story: a strong opening, useful work detail, complete spoken thoughts, and a meaningful close. Quiet work footage is retained. Speech can play over a better shot from elsewhere in the same source, with captions following that audio. Opening titles overlay footage rather than adding a blank title card. No synthetic narration is generated.

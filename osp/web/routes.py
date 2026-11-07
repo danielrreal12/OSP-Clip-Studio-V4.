@@ -149,13 +149,24 @@ def register_routes(app) -> None:
         if not instructions:
             return jsonify(error="invalid", message="Write an editing instruction first."), 400
 
+        editing_style = body.get("editing_style")
+        if editing_style is not None and editing_style not in {"natural", "capcut"}:
+            return jsonify(message="Choose Natural or CapCut-style."), 400
+
+        clip_mode = body.get("clip_mode")
+        tracking = body.get("subject_tracking")
+        if clip_mode is not None and clip_mode not in {"single", "multiple"}:
+            return jsonify(message="Choose one edit or multiple clips."), 400
+        if tracking is not None and not isinstance(tracking, bool):
+            return jsonify(message="Subject tracking must be true or false."), 400
+
         def work():
             try:
                 provider = current_app.extensions["provider_factory"]()
             except ConfigurationError as exc:
                 _store().update_status(job, state="error", message=public_message(exc), error_type="ConfigurationError")
                 return
-            redirect_job(job, _store(), _settings(), provider, instructions[:2000])
+            redirect_job(job, _store(), _settings(), provider, instructions[:2000], editing_style, clip_mode, tracking)
 
         if not _submit(job, work, state="queued", progress=4,
                        message="Asking the director to revise the cut", error_type=None):
@@ -202,7 +213,7 @@ def register_routes(app) -> None:
     @app.get("/download/<job>")
     def legacy_download(job):
         status = _status_or_404(job)
-        for kind in ("portrait", "landscape"):
+        for kind in ("portrait", "landscape", "clip-1", "clip-2", "clip-3"):
             path = _media_path(job, status, kind)
             if path and path.exists():
                 return send_file(path, mimetype="video/mp4", as_attachment=True, download_name=f"OSP_Clip_Studio_V6_{kind}.mp4")
@@ -277,6 +288,9 @@ def _accept_upload(upload_override=None, legacy: bool = False):
     if orientation not in {"portrait", "landscape", "both"}:
         orientation = "both"
     instructions = (request.form.get("instructions") or "")[:2000]
+    editing_style = request.form.get("editing_style", "natural")
+    if editing_style not in {"natural", "capcut"}:
+        return jsonify(message="Choose Natural or CapCut-style."), 400
     warnings = []
     if request.form.get("style"):
         warnings.append("Preset styles are not applied. The cut is decided from the footage.")
@@ -293,6 +307,9 @@ def _accept_upload(upload_override=None, legacy: bool = False):
                 "mode": mode,
                 "orientation": orientation,
                 "instructions": instructions,
+                "editing_style": editing_style,
+                "clip_mode": request.form.get("clip_mode") if request.form.get("clip_mode") in {"single", "multiple"} else "single",
+                "subject_tracking": request.form.get("subject_tracking") == "true",
                 "filename": secure_filename(upload.filename)[:120] or "video",
                 "source_file": source_file,
                 "music_file": None,
@@ -442,7 +459,7 @@ def _media_path(job: str, status: dict, kind: str) -> Path | None:
         if not re.fullmatch(r"source\.[A-Za-z0-9]+", name):
             return None
         return folder / name
-    if kind in {"portrait", "landscape"}:
+    if kind in {"portrait", "landscape"} or re.fullmatch(r"clip-[1-3]", kind):
         return folder / "output" / f"{kind}.mp4"
     return None
 

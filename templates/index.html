@@ -38,6 +38,19 @@
           <label><input type="radio" name="mode" value="full"> Full job, dead time removed</label>
         </fieldset>
         <fieldset class="choice">
+          <legend>Editing style</legend>
+          <label><input type="radio" name="editing_style" value="natural" checked> Natural</label>
+          <label><input type="radio" name="editing_style" value="capcut"> CapCut-style</label>
+        </fieldset>
+        <p class="estimate">CapCut-style: pop captions, punch-ins and quick transitions. Add music below for beat-aligned cuts.</p>
+        <fieldset class="choice">
+          <legend>Automatic clips</legend>
+          <label><input type="radio" name="clip_mode" value="single" checked> One finished edit</label>
+          <label><input type="radio" name="clip_mode" value="multiple"> Up to 3 vertical highlights</label>
+        </fieldset>
+        <label class="stack"><input type="checkbox" name="subject_tracking" value="true"> Track the subject in vertical exports</label>
+        <p class="estimate">Follow the main person or work area. Multiple clips use vertical format and export one at a time.</p>
+        <fieldset class="choice">
           <legend>Export</legend>
           <label><input type="radio" name="orientation" value="both" checked> Portrait and landscape</label>
           <label><input type="radio" name="orientation" value="portrait"> Portrait</label>

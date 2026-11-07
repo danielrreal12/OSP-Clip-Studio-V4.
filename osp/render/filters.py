@@ -9,12 +9,22 @@ def encode_preset(name: str) -> str:
     return name if name in ALLOWED_PRESETS else "veryfast"
 
 
-def framing_filter(width: int, height: int, crop: dict, camera: dict, fps: int, source_span: float) -> str:
+def framing_filter(width: int, height: int, crop: dict, camera: dict, fps: int, source_span: float, tracking=None) -> str:
     zoom = float(crop.get("zoom") or 1)
     focus_x = float(crop.get("focus_x") if crop.get("focus_x") is not None else 0.5)
     focus_y = float(crop.get("focus_y") if crop.get("focus_y") is not None else 0.45)
     move = camera.get("move") or "none"
     amount = float(camera.get("amount") or 0)
+    if tracking:
+        from osp.analysis.tracking import focus_expression
+        target_w = max(width, int(width * zoom) // 2 * 2)
+        target_h = max(height, int(height * zoom) // 2 * 2)
+        x, y = focus_expression(tracking, "x"), focus_expression(tracking, "y")
+        return (
+            f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}:x='max(0,min(in_w-out_w,in_w*({x})-out_w/2))':"
+            f"y='max(0,min(in_h-out_h,in_h*({y})-out_h/2))',setsar=1"
+        )
     if move in {"push_in", "pull_out"} and amount >= 0.02 and source_span <= 8:
         frames = max(2, int(round(source_span * fps)))
         if move == "push_in":

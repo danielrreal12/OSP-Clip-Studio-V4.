@@ -380,12 +380,8 @@ async function loadPlan() {
   const rerender = button("Re-render these cuts", () => saveCuts(list));
   rerender.classList.add("secondary");
   const redirect = button("Run the director again", () => {
-    const text = document.querySelector("#instructions").value.trim();
-    if (!text) {
-      showAlert("Write an instruction before running the director again.");
-      return;
-    }
-    postJson("/api/jobs/" + currentJob + "/redirect", { instructions: text });
+    const text = document.querySelector("#instructions").value.trim() || "Create a complete highlight with the selected editing style, clip mode and framing options.";
+    postJson("/api/jobs/" + currentJob + "/redirect", { instructions: text, editing_style: document.querySelector('input[name="editing_style"]:checked').value, clip_mode: document.querySelector('input[name="clip_mode"]:checked').value, subject_tracking: document.querySelector('input[name="subject_tracking"]').checked });
   });
   redirect.classList.add("secondary");
   root.append(rerender, redirect);
@@ -513,6 +509,7 @@ function showFormAlert(text) {
 }
 
 function labelFor(orientation) {
+  if (/^clip-[1-3]$/.test(orientation)) return "Highlight " + orientation.slice(-1);
   if (orientation === "landscape") return "landscape";
   if (orientation === "portrait") return "portrait";
   return orientation;

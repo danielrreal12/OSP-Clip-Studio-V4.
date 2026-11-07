@@ -43,7 +43,7 @@ settings = Settings(openai_api_key='test-key', work_dir=source.parent / 'jobs-wo
 app = create_app(settings, provider_factory=EvidenceProvider)
 store = app.extensions['store']
 job = 'ab' * 16
-folder = store.create(job, {'source_file': 'source.mp4', 'orientation': 'both'})
+folder = store.create(job, {'source_file': 'source.mp4', 'orientation': 'both', 'editing_style': 'capcut', 'subject_tracking': True})
 shutil.copy(source, folder / 'source.mp4')
 with app.app_context():
     run_job(job, store, settings, EvidenceProvider())
