@@ -7,7 +7,8 @@ import numpy as np
 
 def make_instrumental(path, plan):
     rate, bpm = 24000, 96
-    length = min(65, sum(s["output_duration"] for s in plan["segments"]) + 2)
+    end_time = sum(s["output_duration"] - (s["transition_in"]["duration"] if i else 0) for i, s in enumerate(plan["segments"]))
+    length = min(65, end_time + 1)
     audio = np.zeros(int(length * rate), dtype=np.float32)
     rng = np.random.default_rng(96)
 
@@ -51,7 +52,10 @@ def make_instrumental(path, plan):
         elapsed += shot["output_duration"] - (shot["transition_in"]["duration"] if i else 0)
     fade = min(int(rate*.65), len(audio))
     audio[:int(rate*.04)] *= np.linspace(0,1,int(rate*.04))
-    audio[-fade:] *= np.linspace(1,0,fade)
+    end_sample = min(len(audio), int(end_time * rate))
+    fade = min(fade, end_sample)
+    audio[end_sample-fade:end_sample] *= np.linspace(1,0,fade)
+    audio[end_sample:] = 0
     audio = np.tanh(audio) * .85
     with wave.open(str(path), "wb") as handle:
         handle.setnchannels(1)

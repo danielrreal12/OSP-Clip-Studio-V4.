@@ -27,6 +27,7 @@ def test_original_bed_is_audible_and_bounded(tmp_path):
         samples = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2").astype(float)/32768
     assert .01 < np.sqrt(np.mean(samples**2)) < .4
     assert np.max(np.abs(samples)) < .95
+    assert np.max(np.abs(samples[-2400:])) == 0
 
 
 def test_tiktok_copy_is_grounded_and_uses_safe_zone():

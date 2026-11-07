@@ -556,8 +556,12 @@ def _finish_audio(source: Path, dest: Path, plan: dict, music: Path | None, sett
     tail_chain = ",".join(tail)
     if use_music:
         base = float(plan["music"].get("base_volume") or 0.1)
+        bed_fade = ""
+        if (plan.get("meta") or {}).get("editing_style") == "tiktok":
+            duration = sum(s["output_duration"] - (s["transition_in"]["duration"] if i else 0) for i,s in enumerate(plan["segments"]))
+            bed_fade = f"afade=t=in:d=0.08,afade=t=out:st={max(0,duration-.65):.3f}:d=0.65,"
         graph = (
-            f"[1:a]volume={base:.3f},aformat=sample_rates=48000:channel_layouts=stereo[bed];"
+            f"[1:a]{bed_fade}volume={base:.3f},aformat=sample_rates=48000:channel_layouts=stereo[bed];"
             f"[0:a]{'highpass=f=90,' if enhance else ''}aformat=sample_rates=48000:channel_layouts=stereo,asplit[speech][key];"
             f"[bed][key]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=280[ducked];"
             f"[speech][ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0"
