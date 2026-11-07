@@ -4,5 +4,6 @@ gunicorn>=23,<24
 openai>=1.75,<3
 opencv-python-headless>=4.10,<5
 numpy>=1.26,<3
+Pillow>=11,<13
 jsonschema>=4.23,<5
 scenedetect>=0.6.4,<0.7

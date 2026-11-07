@@ -8,6 +8,17 @@ from osp.render.executor import render_edit
 from osp.schema import default_segment, refine_plan
 
 
+@pytest.mark.parametrize("text", ["NO LIGHT. NOW WHAT?", "FOLLOW THE CONNECTION", "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"])
+def test_tiktok_headlines_fit_the_safe_width(text):
+    from PIL import ImageFont
+    from osp.render.executor import FONT, _wrap_overlay
+
+    font = ImageFont.truetype(FONT, 51)
+    lines = _wrap_overlay(text, 720, 51).splitlines()
+    assert "".join(lines).replace(" ", "") == text.replace(" ", "")
+    assert all(font.getlength(line) <= 720 * 0.74 for line in lines)
+
+
 @pytest.mark.parametrize("style", ["natural", "capcut", "tiktok"])
 def test_voiceover_uses_selected_audio_and_title_does_not_add_card(settings, tmp_path, style):
     source = tmp_path / "two-tones.mp4"
