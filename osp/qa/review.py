@@ -210,7 +210,9 @@ def _awkward_cuts(plan: dict, analysis: dict) -> dict:
     words = (analysis.get("transcript") or {}).get("words") or []
     bad = 0
     for segment in plan.get("segments") or []:
-        for edge in (float(segment["source_start"]), float(segment["source_end"])):
+        voice = segment.get("audio") or {}
+        for edge in (float(voice.get("voiceover_start", segment["source_start"])),
+                     float(voice.get("voiceover_end", segment["source_end"]))):
             for word in words:
                 if float(word["start"]) + 0.08 < edge < float(word["end"]) - 0.08:
                     bad += 1

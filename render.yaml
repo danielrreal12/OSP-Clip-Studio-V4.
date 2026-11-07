@@ -22,7 +22,7 @@ services:
       - key: WORK_DIR
         value: /var/data/osp
       - key: MAX_UPLOAD_MB
-        value: "250"
+        value: "800"
       - key: MAX_CONCURRENT_JOBS
         value: "1"
       - key: MAX_QUEUED_JOBS

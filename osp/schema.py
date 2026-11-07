@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 
 from osp.errors import PlanValidationError
 
-PROMPT_VERSION = "6.0"
+PROMPT_VERSION = "6.2"
 
 _STREET = re.compile(
     r"\b\d{1,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+){0,3}\s+"
@@ -82,7 +82,11 @@ SEGMENT_SCHEMA: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "required": ["gain_db"],
-            "properties": {"gain_db": {"type": "number", "minimum": -8, "maximum": 6}},
+            "properties": {
+                "gain_db": {"type": "number", "minimum": -8, "maximum": 6},
+                "voiceover_start": {"type": "number", "minimum": 0},
+                "voiceover_end": {"type": "number", "minimum": 0},
+            },
         },
         "visual": {
             "type": "object",
@@ -300,6 +304,9 @@ def _fill_segment(raw: dict, index: int) -> dict:
             "chapter_card": chapter,
         }
     )
+    if audio.get("voiceover_start") is not None and audio.get("voiceover_end") is not None:
+        base["audio"]["voiceover_start"] = round(_num(audio["voiceover_start"], -1), 3)
+        base["audio"]["voiceover_end"] = round(_num(audio["voiceover_end"], -1), 3)
     return base
 
 
@@ -362,6 +369,13 @@ def semantic_errors(plan: dict, duration: float, mode: str) -> list[str]:
             errors.append(f"segments[{index}]: outside the source duration")
         if start >= end:
             errors.append(f"segments[{index}]: end must be after start")
+        voice = segment.get("audio") or {}
+        if "voiceover_start" in voice:
+            a, b = voice["voiceover_start"], voice["voiceover_end"]
+            if not 0 <= a < b <= duration + 0.02:
+                errors.append(f"segments[{index}]: voiceover outside the source duration")
+            elif abs((b - a) - segment["output_duration"]) > 0.15:
+                errors.append(f"segments[{index}]: voiceover must fit the output at natural speed")
         span = max(0.01, end - start)
         ratio = float(segment["output_duration"]) / span
         if ratio < 0.67 or ratio > 1.4:
@@ -395,16 +409,12 @@ def _overlaps(start: float, end: float, other_start: float, other_end: float) ->
     return min(end, other_end) - max(start, other_start) > 0.05
 
 
-def _snap_edge(timestamp: float, words: list[dict], window: float = 0.35) -> float:
+def _snap_edge(timestamp: float, words: list[dict], edge: str = "start") -> float:
+    # Extend an intersected word outward. The old first-match search could
+    # snap both edges to an earlier word and erase a valid shot.
     for word in words:
-        if word["start"] - 0.02 <= timestamp <= word["end"] + 0.02:
-            if timestamp - word["start"] <= word["end"] - timestamp:
-                return word["start"]
-            return word["end"]
-        if 0 < timestamp - word["end"] <= window:
-            return word["end"]
-        if 0 < word["start"] - timestamp <= window:
-            return word["start"]
+        if word["start"] < timestamp < word["end"]:
+            return word["start"] if edge == "start" else word["end"]
     return timestamp
 
 
@@ -567,7 +577,6 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
     duration = float(analysis["duration"])
     words = analysis.get("transcript", {}).get("words") or []
     fillers = analysis.get("transcript", {}).get("fillers") or []
-    silence = (analysis.get("audio") or {}).get("silence") or []
     samples = analysis.get("quality_samples") or []
     instructions = (options.get("instructions") or "").lower()
     remove_fillers = "filler" in instructions
@@ -577,10 +586,12 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
         start = max(0.0, min(duration, float(segment["source_start"])))
         end = max(0.0, min(duration, float(segment["source_end"])))
         start, end = _trim_ranges(start, end, analysis.get("black_ranges") or [], max_trim=20)
-        start, end = _trim_ranges(start, end, silence, max_trim=8)
-        if words:
-            start = _snap_edge(start, words)
-            end = _snap_edge(end, words)
+        # Quiet work is valid B-roll. Audio silence alone is not dead footage.
+        voice = segment.get("audio") or {}
+        is_voiceover = "voiceover_start" in voice
+        if not is_voiceover and words:
+            start = _snap_edge(start, words, "start")
+            end = _snap_edge(end, words, "end")
         start = max(0.0, min(start, duration))
         end = max(0.0, min(end, duration))
         if end - start < 0.45:
@@ -596,7 +607,7 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
             notes.append("Dropped a segment that contained sensitive material without a safe crop.")
             continue
         for piece in pieces:
-            if remove_fillers:
+            if remove_fillers and "voiceover_start" not in (piece.get("audio") or {}):
                 pieces2 = _excise_fillers(piece, fillers)
                 if len(pieces2) > 1:
                     notes.append("Split a segment to remove a filler stretch you asked to cut.")
@@ -610,9 +621,18 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
         )
 
     for segment in refined:
+        voice = segment.get("audio") or {}
+        is_voiceover = "voiceover_start" in voice
+        if is_voiceover:
+            voice["voiceover_start"] = _snap_edge(voice["voiceover_start"], words, "start")
+            voice["voiceover_end"] = _snap_edge(voice["voiceover_end"], words, "end")
+        audio_start = voice.get("voiceover_start", segment["source_start"])
+        audio_end = voice.get("voiceover_end", segment["source_end"])
         _attach_blur(segment, analysis.get("sensitive_regions") or [])
         span = segment["source_end"] - segment["source_start"]
-        if _speech_ratio(segment["source_start"], segment["source_end"], words) >= 0.35:
+        if is_voiceover:
+            segment["output_duration"] = round(audio_end - audio_start, 3)
+        elif _speech_ratio(audio_start, audio_end, words) > 0:
             segment["output_duration"] = round(span, 3)
         else:
             paced = float(segment["output_duration"])
@@ -620,12 +640,12 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
             segment["output_duration"] = round(paced, 3)
         segment["captions"] = []
         if segment["captions_enabled"]:
-            segment["captions"] = _words_inside(words, segment["source_start"], segment["source_end"])
+            segment["captions"] = _words_inside(words, audio_start, audio_end)
             if not segment["captions"]:
                 segment["captions"] = _segment_lines(
                     (analysis.get("transcript") or {}).get("segments") or [],
-                    segment["source_start"],
-                    segment["source_end"],
+                    audio_start,
+                    audio_end,
                 )
             if not segment["captions"]:
                 segment["captions_enabled"] = False
@@ -670,6 +690,7 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
 
     plan["segments"] = refined
     final_errors = schema_errors(plan)
+    final_errors.extend(semantic_errors(plan, duration, mode))
     # Captions are attached after schema validation of the model shape; they are server-owned.
     if final_errors:
         raise PlanValidationError(final_errors)
@@ -697,7 +718,8 @@ def apply_user_edits(plan: dict, edits: list[dict], analysis: dict, settings, op
         source["source_start"] = _num(edit.get("source_start"), source["source_start"])
         source["source_end"] = _num(edit.get("source_end"), source["source_end"])
         span = max(0.45, source["source_end"] - source["source_start"])
-        source["output_duration"] = span
+        voice = source.get("audio") or {}
+        source["output_duration"] = (voice["voiceover_end"] - voice["voiceover_start"]) if "voiceover_start" in voice else span
         source["sequence"] = index + 1
         segments.append(source)
     if not segments:

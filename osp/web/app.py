@@ -159,6 +159,8 @@ def create_app(settings: Settings | None = None, provider_factory=None) -> Flask
     cleanup_expired(store.jobs_root, settings.job_ttl_hours)
     recover_interrupted(store)
     register_routes(app)
+    from osp.web.uploads import register_uploads
+    register_uploads(app)
     return app
 
 

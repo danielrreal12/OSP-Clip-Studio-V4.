@@ -60,6 +60,8 @@ def _evidence(analysis: dict, options: dict, settings) -> dict:
         "duration_sec": duration,
         "mode": mode,
         "output_duration_budget_sec": duration_budget,
+        "target_duration_sec": round(min(duration_budget, max(4, duration * 0.75)), 2),
+        "editing_brief": "Finished field-work story: strong visual opening, complete explanation, work detail, satisfying close. Use useful silent work as B-roll; move real explanation audio over it when pictures during speech are weak.",
         "orientation_request": options.get("orientation") or "portrait",
         "music_file_available": bool(options.get("has_music")),
         "user_instructions": (options.get("instructions") or "")[:2000],
@@ -84,6 +86,29 @@ def _evidence(analysis: dict, options: dict, settings) -> dict:
             "truncated": len(words) > 900,
         },
     }
+
+
+
+def _editorial_feedback(plan: dict, analysis: dict) -> list[str]:
+    feedback = []
+    segments = plan["segments"]
+    work = [
+        note for note in (analysis.get("vision") or {}).get("frames") or []
+        if float(note.get("osp_relevance") or 0) >= 0.5 and note.get("timestamp") is not None
+    ]
+    if work and not any(
+        segment["source_start"] <= float(note["timestamp"]) <= segment["source_end"]
+        for segment in segments for note in work
+    ):
+        feedback.append("The cut omits every clearly relevant work frame. Open with or include the actual work, using real explanation audio over those images when appropriate.")
+    fragments = sum(
+        1 for segment in segments
+        if segment.get("captions_enabled") and 0 < len(segment.get("captions") or []) <= 2
+        and segment["output_duration"] < 1.5
+    )
+    if fragments >= 2:
+        feedback.append("Several speech clips contain only one or two words. Replace fragments with complete thoughts and use fewer, longer cuts.")
+    return feedback
 
 
 def direct_edit(provider, settings, ledger, analysis: dict, options: dict) -> dict:
@@ -115,6 +140,11 @@ def direct_edit(provider, settings, ledger, analysis: dict, options: dict) -> di
         )
         try:
             plan = refine_plan(parsed, analysis, settings, options)
+            feedback = _editorial_feedback(plan, analysis)
+            if feedback and attempt == 0:
+                raise PlanValidationError(feedback)
+            if feedback:
+                plan["warnings"].extend(feedback)
             plan["meta"]["director_model"] = settings.director_model
             plan["meta"]["attempts"] = attempt + 1
             return plan

@@ -39,7 +39,7 @@ class Settings:
     transcribe_model: str = "whisper-1"
     ai_timeout_sec: float = 120.0
     work_dir: Path = field(default_factory=lambda: Path("/tmp/osp-v6"))
-    max_upload_mb: int = 250
+    max_upload_mb: int = 800
     max_music_mb: int = 30
     max_duration_sec: float = 600.0
     min_duration_sec: float = 0.4
@@ -68,7 +68,7 @@ class Settings:
     trust_proxy: bool = False
     log_json: bool = False
     ffmpeg_timeout_sec: float = 900.0
-    version: str = "6.0.0"
+    version: str = "6.2.0"
     price_overrides: dict = field(default_factory=dict)
 
     @property
@@ -98,7 +98,7 @@ class Settings:
             transcribe_model=os.getenv("TRANSCRIBE_MODEL", "whisper-1").strip() or "whisper-1",
             ai_timeout_sec=_env_float("AI_TIMEOUT_SEC", 120.0),
             work_dir=Path(os.getenv("WORK_DIR", "/tmp/osp-v6")),
-            max_upload_mb=_env_int("MAX_UPLOAD_MB", 250),
+            max_upload_mb=_env_int("MAX_UPLOAD_MB", 800),
             max_music_mb=_env_int("MAX_MUSIC_MB", 30),
             max_duration_sec=_env_float("MAX_DURATION_SEC", 600.0),
             min_duration_sec=_env_float("MIN_DURATION_SEC", 0.4),

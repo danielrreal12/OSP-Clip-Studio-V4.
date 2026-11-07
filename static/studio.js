@@ -35,6 +35,7 @@ function boot() {
     .then((data) => {
       config = data;
       document.querySelector("#version").textContent = "V" + String(data.version || "6").replace(/^(\d).*/, "$1");
+      document.querySelector("#upload-limit").textContent = "Up to " + data.max_upload_mb + " MB · " + Math.round(data.max_duration_sec / 60) + " minutes";
       const perMinute = data.estimate_per_minute || {};
       estimate.textContent = perMinute.estimated_usd
         ? `About $${Number(perMinute.estimated_usd).toFixed(3)} of model cost per minute of source. The invoice can differ; this uses published rate estimates.`
@@ -100,25 +101,78 @@ function updateFile() {
     : "MP4, MOV, WEBM · phone or Chromebook";
 }
 
-function uploadVideo(body) {
+function uploadRequest(url, method, body, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/jobs");
+    xhr.open(method, url);
     xhr.responseType = "json";
+    xhr.timeout = 300000;
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round(event.loaded / event.total * 100);
-        setMessage(percent < 100 ? "Uploading " + percent + "%" : "Checking your video…", percent);
-      }
+      if (event.lengthComputable && onProgress) onProgress(event.loaded, event.total);
     };
     xhr.onload = () => {
       const payload = xhr.response || {};
       if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
       else reject(new Error(payload.message || "Upload failed. Please try again."));
     };
-    xhr.onerror = () => reject(new Error("The upload connection dropped. Please try again."));
+    xhr.onerror = () => reject(new Error("The upload connection dropped. Tap Create the edit to resume."));
+    xhr.ontimeout = () => reject(new Error("Upload timed out. Tap Create the edit to resume."));
     xhr.send(body);
   });
+}
+
+async function uploadVideo(body) {
+  const file = videoInput.files[0];
+  const showProgress = (loaded, total) => {
+    const percent = Math.round(loaded / total * 100);
+    setMessage(percent < 100 ? "Uploading " + percent + "%" : "Checking your video…", percent);
+  };
+  if (file.size <= 32 * 1024 * 1024) {
+    return uploadRequest("/api/jobs", "POST", body, showProgress);
+  }
+  const fingerprint = JSON.stringify([file.name, file.size, file.lastModified]);
+  let session = null;
+  try { session = JSON.parse(sessionStorage.getItem("osp-upload")); } catch {}
+  if (session && session.fingerprint === fingerprint) {
+    const response = await fetch("/api/uploads/" + session.id);
+    if (response.ok) session.offset = (await response.json()).offset;
+    else session = null;
+  } else session = null;
+  if (!session) {
+    const response = await fetch("/api/uploads", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, size: file.size }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "Could not start the upload.");
+    session = { id: data.upload_id, offset: data.offset, fingerprint };
+    sessionStorage.setItem("osp-upload", JSON.stringify(session));
+  }
+  let failures = 0;
+  while (session.offset < file.size) {
+    const offset = session.offset;
+    const part = file.slice(offset, offset + 16 * 1024 * 1024);
+    try {
+      const data = await uploadRequest(
+        "/api/uploads/" + session.id + "?offset=" + offset, "PUT", part,
+        (loaded) => showProgress(offset + loaded, file.size),
+      );
+      session.offset = data.offset;
+      failures = 0;
+    } catch (error) {
+      if (++failures >= 3) throw error;
+      const response = await fetch("/api/uploads/" + session.id);
+      if (!response.ok) throw error;
+      session.offset = (await response.json()).offset;
+    }
+    sessionStorage.setItem("osp-upload", JSON.stringify(session));
+  }
+  body.delete("video");
+  body.set("upload_id", session.id);
+  setMessage("Checking your video…", 100);
+  const result = await uploadRequest("/api/jobs", "POST", body);
+  sessionStorage.removeItem("osp-upload");
+  return result;
 }
 
 form.addEventListener("submit", async (event) => {
@@ -139,7 +193,7 @@ form.addEventListener("submit", async (event) => {
     formAlert.scrollIntoView({ block: "center" });
     return;
   }
-  const maxMb = (config && config.max_upload_mb) || 250;
+  const maxMb = (config && config.max_upload_mb) || 800;
   if (file.size > maxMb * 1024 * 1024) {
     showFormAlert(`That file is over the ${maxMb} MB limit.`);
     return;
@@ -310,7 +364,13 @@ async function loadPlan() {
   const summary = document.createElement("p");
   summary.className = "lede";
   summary.textContent = payload.plan.summary || "";
-  root.append(heading, summary);
+  const stats = document.createElement("p");
+  stats.className = "estimate";
+  const segments = payload.plan.segments || [];
+  const seconds = segments.reduce((total, segment) => total + Number(segment.output_duration || 0), 0);
+  stats.textContent = segments.length + " shots · " + seconds.toFixed(1) + "s" +
+    (segments.some(segment => segment.audio && segment.audio.voiceover_start != null) ? " · Narration over work footage" : "");
+  root.append(heading, summary, stats);
   const list = document.createElement("div");
   list.className = "segments";
   (payload.plan.segments || []).forEach((segment, index) => {
@@ -369,6 +429,13 @@ function segmentCard(segment, index) {
   const reason = document.createElement("p");
   reason.className = "reason";
   reason.textContent = segment.reason || "";
+  const voice = segment.audio || {};
+  if (voice.voiceover_start != null) {
+    const note = document.createElement("p");
+    note.className = "estimate";
+    note.textContent = "Narration from " + Number(voice.voiceover_start).toFixed(1) + "–" + Number(voice.voiceover_end).toFixed(1) + "s of the original";
+    card.append(note);
+  }
   const times = document.createElement("div");
   times.className = "times";
   times.append(timeField("In", "start", segment.source_start), timeField("Out", "end", segment.source_end));
