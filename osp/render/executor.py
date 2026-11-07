@@ -6,6 +6,8 @@ import logging
 import textwrap
 from pathlib import Path
 
+from PIL import ImageFont
+
 from osp.errors import RenderError
 from osp.media import probe_duration, probe_media, run_ffmpeg
 from osp.render.captions import write_ass
@@ -14,6 +16,28 @@ from osp.render.filters import blur_steps, encode_preset, framing_filter, grade_
 log = logging.getLogger("osp.render")
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+def _wrap_overlay(text: str, width: int, fontsize: int) -> str:
+    """Wrap against the actual rendered font and leave room for TikTok controls."""
+    font = ImageFont.truetype(FONT, fontsize)
+    limit = width * 0.74
+    lines, line = [], ""
+    for word in str(text).split():
+        candidate = f"{line} {word}".strip()
+        if line and font.getlength(candidate) > limit:
+            lines.append(line)
+            line = ""
+        if line:
+            line += " "
+        for char in word:
+            if line and font.getlength(line + char) > limit:
+                lines.append(line)
+                line = ""
+            line += char
+    if line.strip():
+        lines.append(line.strip())
+    return "\n".join(part.strip() for part in lines)
 
 
 def _even(value: int) -> int:
@@ -248,13 +272,13 @@ def _render_segment(
     if title and Path(FONT).exists():
         title_name = f"title-{index:02d}.txt"
         (work / title_name).write_text(
-            "\n".join(textwrap.wrap(str(title), width=(21 if caption_style == "tiktok" else 25) if height > width else 40)),
+            _wrap_overlay(str(title), width, max(18, int(width * 0.071))) if caption_style == "tiktok" else "\n".join(textwrap.wrap(str(title), width=25 if height > width else 40)),
             encoding="utf-8",
         )
     closing_name = None
     if closing and caption_style == "tiktok" and Path(FONT).exists():
         closing_name = f"closing-{index:02d}.txt"
-        (work / closing_name).write_text("\n".join(textwrap.wrap(str(closing).upper(), width=23)), encoding="utf-8")
+        (work / closing_name).write_text(_wrap_overlay(str(closing).upper(), width, max(18, int(width * 0.052))), encoding="utf-8")
     if segment.get("captions_enabled") and segment.get("captions"):
         burned = write_ass(
             segment["captions"],
