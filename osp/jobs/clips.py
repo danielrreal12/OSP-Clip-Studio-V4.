@@ -4,18 +4,21 @@ import copy
 
 def select_clips(plan, limit=3):
     segments = plan["segments"]
+    total = sum(s["output_duration"] for s in segments)
+    count = min(limit, max(1, int(total // 12)))
+    target = min(30, total / count)
     groups, current, seconds = [], [], 0
     for segment in segments:
-        if current and seconds + segment["output_duration"] > 15:
+        if current and seconds + segment["output_duration"] > target:
             groups.append(current)
             current, seconds = [], 0
         current.append(segment)
         seconds += segment["output_duration"]
     if current:
         groups.append(current)
-    # Short sources with a few shots can still yield separate useful clips.
-    if len(groups) == 1 and len(segments) > 1:
-        groups = [[s] for s in segments]
+    if len(groups) > 1 and sum(s["output_duration"] for s in groups[-1]) < 12:
+        groups[-2].extend(groups.pop())
+    # If the validated timeline is one short story, export it intact.
     ranked = sorted(enumerate(groups), key=lambda pair: -sum(s["importance"] * s["output_duration"] for s in pair[1]) / sum(s["output_duration"] for s in pair[1]))
     clips = []
     for index, group in sorted(ranked[:limit]):

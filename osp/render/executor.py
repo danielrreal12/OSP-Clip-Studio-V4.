@@ -83,7 +83,8 @@ def render_edit(
             frame_size=_display_size(analysis),
             timeout=settings.ffmpeg_timeout_sec,
             on_progress=on_progress,
-            title=plan.get("title") if index == 0 and plan.get("open_with_title") else None,
+            title=(plan.get("hook") or plan.get("title")) if index == 0 and plan.get("open_with_title") else (segment.get("on_screen_label") if (plan.get("meta") or {}).get("editing_style") == "tiktok" and not (index == len(plan["segments"])-1 and plan.get("closing_line")) else None),
+            closing=plan.get("closing_line") if index == len(plan["segments"])-1 else None,
             caption_style=(plan.get("meta") or {}).get("editing_style", "natural"),
             tracking=tracking,
         )
@@ -226,6 +227,7 @@ def _render_segment(
     timeout: float,
     on_progress=None,
     title=None,
+    closing=None,
     caption_style="natural",
     tracking=None,
 ) -> bool:
@@ -246,9 +248,13 @@ def _render_segment(
     if title and Path(FONT).exists():
         title_name = f"title-{index:02d}.txt"
         (work / title_name).write_text(
-            "\n".join(textwrap.wrap(str(title), width=25 if height > width else 40)),
+            "\n".join(textwrap.wrap(str(title), width=(21 if caption_style == "tiktok" else 25) if height > width else 40)),
             encoding="utf-8",
         )
+    closing_name = None
+    if closing and caption_style == "tiktok" and Path(FONT).exists():
+        closing_name = f"closing-{index:02d}.txt"
+        (work / closing_name).write_text("\n".join(textwrap.wrap(str(closing).upper(), width=23)), encoding="utf-8")
     if segment.get("captions_enabled") and segment.get("captions"):
         burned = write_ass(
             segment["captions"],
@@ -275,6 +281,9 @@ def _render_segment(
         audio_trim=(0.0, out_dur) if is_voiceover else None,
         title_name=title_name,
         tracking=tracking,
+        tiktok=caption_style == "tiktok",
+        closing_name=closing_name,
+        output_duration=out_dur,
     )
     args = [
         "-threads",
@@ -332,7 +341,7 @@ def _render_segment(
     return burned
 
 
-def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name, has_audio, frame_size=(0, 0), audio_input=0, audio_trim=None, title_name=None, tracking=None) -> tuple[str, str]:
+def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name, has_audio, frame_size=(0, 0), audio_input=0, audio_trim=None, title_name=None, tracking=None, tiktok=False, closing_name=None, output_duration=0) -> tuple[str, str]:
     width, height = size
     pieces = [f"[0:v]trim=start={trim_start:.3f}:end={trim_end:.3f},setpts=PTS-STARTPTS[v0]"]
     blur, label = blur_steps(segment.get("blur_regions") or [], "v0", frame_size[0], frame_size[1])
@@ -345,11 +354,28 @@ def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name,
     if abs(speed - 1) > 0.03:
         tail.append(f"setpts={1 / speed:.5f}*PTS")
     if title_name:
-        fontsize = max(18, int(width * (0.05 if height > width else 0.035)))
+        if tiktok:
+            fontsize = max(18, int(width * 0.071))
+            tail.append(f"drawbox=x=iw*0.08:y=ih*0.14:w=iw*0.10:h=5:color=0xffdf45:t=fill:enable='lt(t,2.8)'")
+            tail.append(
+                f"drawtext=fontfile={FONT}:textfile={title_name}:expansion=none:"
+                f"fontsize={fontsize}:fontcolor=white:borderw=3:bordercolor=black@0.8:"
+                f"shadowx=2:shadowy=3:line_spacing=8:x=w*0.08:y=h*0.17:"
+                f"alpha='min(1,t/0.12)':enable='between(t,0,2.8)'"
+            )
+        else:
+            fontsize = max(18, int(width * (0.05 if height > width else 0.035)))
+            tail.append(
+                f"drawtext=fontfile={FONT}:textfile={title_name}:expansion=none:"
+                f"fontsize={fontsize}:fontcolor=white:box=1:boxcolor=black@0.55:"
+                f"boxborderw=12:x=(w-text_w)/2:y=h*0.09:enable='between(t,0,2.8)'"
+            )
+    if tiktok and closing_name:
         tail.append(
-            f"drawtext=fontfile={FONT}:textfile={title_name}:expansion=none:"
-            f"fontsize={fontsize}:fontcolor=white:box=1:boxcolor=black@0.55:"
-            f"boxborderw=12:x=(w-text_w)/2:y=h*0.09:enable='between(t,0,2.8)'"
+            f"drawtext=fontfile={FONT}:textfile={closing_name}:expansion=none:"
+            f"fontsize={max(18, int(width*.052))}:fontcolor=0xffdf45:"
+            f"borderw=3:bordercolor=black@0.85:line_spacing=6:x=w*0.08:y=h*0.17:"
+            f"enable='gte(t,{max(2.9 if title_name else 0, output_duration-2.4):.3f})'"
         )
     if ass_name:
         tail.append(f"subtitles={ass_name}")
@@ -523,16 +549,20 @@ def _finish_audio(source: Path, dest: Path, plan: dict, music: Path | None, sett
         )
         return
     tail = []
-    if enhance:
+    if enhance and not use_music:
         tail.append("highpass=f=90")
     if normalize:
         tail.append("loudnorm=I=-16:TP=-1.5:LRA=11")
     tail_chain = ",".join(tail)
     if use_music:
         base = float(plan["music"].get("base_volume") or 0.1)
+        bed_fade = ""
+        if (plan.get("meta") or {}).get("editing_style") == "tiktok":
+            duration = sum(s["output_duration"] - (s["transition_in"]["duration"] if i else 0) for i,s in enumerate(plan["segments"]))
+            bed_fade = f"afade=t=in:d=0.08,afade=t=out:st={max(0,duration-.65):.3f}:d=0.65,"
         graph = (
-            f"[1:a]volume={base:.3f},aformat=sample_rates=48000:channel_layouts=stereo[bed];"
-            f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit[speech][key];"
+            f"[1:a]{bed_fade}volume={base:.3f},aformat=sample_rates=48000:channel_layouts=stereo[bed];"
+            f"[0:a]{'highpass=f=90,' if enhance else ''}aformat=sample_rates=48000:channel_layouts=stereo,asplit[speech][key];"
             f"[bed][key]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=280[ducked];"
             f"[speech][ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0"
         )

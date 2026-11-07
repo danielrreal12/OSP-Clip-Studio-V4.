@@ -37,7 +37,7 @@ def _evidence(analysis: dict, options: dict, settings) -> dict:
     mode = options.get("mode") or "highlights"
     duration = float(analysis.get("duration") or 0)
     if mode == "highlights":
-        duration_budget = round(min(settings.highlight_max_sec, max(6.0, duration)), 2)
+        duration_budget = round(min(settings.highlight_max_sec, 30 if options.get("editing_style") == "tiktok" and options.get("clip_mode") != "multiple" else settings.highlight_max_sec, max(6.0, duration)), 2)
     else:
         duration_budget = round(duration, 2)
     vision_frames = []
@@ -61,8 +61,9 @@ def _evidence(analysis: dict, options: dict, settings) -> dict:
         "duration_sec": duration,
         "mode": mode,
         "editing_style": options.get("editing_style") or "natural",
+        "clip_mode": options.get("clip_mode") or "single",
         "output_duration_budget_sec": duration_budget,
-        "target_duration_sec": round(min(duration_budget, max(4, duration * 0.75)), 2),
+        "target_duration_sec": round(min(duration_budget, 25 if options.get("editing_style") == "tiktok" else max(4, duration * 0.75)), 2),
         "editing_brief": "Finished field-work story: strong visual opening, complete explanation, work detail, satisfying close. Use useful silent work as B-roll; move real explanation audio over it when pictures during speech are weak.",
         "orientation_request": options.get("orientation") or "portrait",
         "music_file_available": bool(options.get("has_music")),

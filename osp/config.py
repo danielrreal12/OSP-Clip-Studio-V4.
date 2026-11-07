@@ -68,7 +68,7 @@ class Settings:
     trust_proxy: bool = False
     log_json: bool = False
     ffmpeg_timeout_sec: float = 900.0
-    version: str = "6.3.0"
+    version: str = "6.4.0"
     price_overrides: dict = field(default_factory=dict)
 
     @property

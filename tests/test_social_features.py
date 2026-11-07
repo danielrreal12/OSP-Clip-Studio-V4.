@@ -29,7 +29,7 @@ def test_tracking_follows_textured_moving_subject(tmp_path):
 
 
 def test_clip_selection_is_distinct_and_ranked():
-    segments = [default_segment(i*20, i*20+8, i+1) for i in range(5)]
+    segments = [default_segment(i*20, i*20+18, i+1) for i in range(5)]
     for i, s in enumerate(segments):
         s["importance"] = .1 + i*.15
     plan = {"segments": segments, "meta": {}, "outro": None}
@@ -40,14 +40,20 @@ def test_clip_selection_is_distinct_and_ranked():
     assert plan == original
 
 
-def test_batch_capcut_tracking_exports_and_downloads(settings, sample_video):
+def test_batch_capcut_tracking_exports_and_downloads(settings, tmp_path):
+    import subprocess
+    sample_video = tmp_path / "long-work.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=12:d=40",
+                    "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", str(sample_video)], check=True)
+    settings.max_duration_sec = 45
+    settings.highlight_max_sec = 45
     class MultiProvider(EvidenceProvider):
         def _plan(self, user):
             plan = super()._plan(user)
             first = plan["segments"][0]
-            first.update(source_start=1.1, source_end=2.5, output_duration=1.4)
+            first.update(source_start=0, source_end=20, output_duration=20)
             second = copy.deepcopy(first)
-            second.update(sequence=2, source_start=2.5, source_end=3.9)
+            second.update(sequence=2, source_start=20, source_end=40)
             plan["segments"] = [first, second]
             return plan
     app = create_app(settings, provider_factory=MultiProvider)

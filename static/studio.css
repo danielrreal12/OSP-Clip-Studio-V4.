@@ -102,3 +102,5 @@ button:disabled { cursor: wait; }
 .drop:focus-within { outline: 3px solid var(--amber); outline-offset: 4px; }
 .drop-title { overflow-wrap: anywhere; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) { #fill { transition: none; } }
+
+input[type="text"] { width: 100%; padding: 12px; margin-top: 6px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); }
