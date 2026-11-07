@@ -84,6 +84,7 @@ SEGMENT_SCHEMA: dict[str, Any] = {
             "required": ["gain_db"],
             "properties": {
                 "gain_db": {"type": "number", "minimum": -8, "maximum": 6},
+                "mute": {"type": "boolean"},
                 "voiceover_start": {"type": "number", "minimum": 0},
                 "voiceover_end": {"type": "number", "minimum": 0},
             },
@@ -304,6 +305,8 @@ def _fill_segment(raw: dict, index: int) -> dict:
             "chapter_card": chapter,
         }
     )
+    if audio.get("mute"):
+        base["audio"]["mute"] = True
     if audio.get("voiceover_start") is not None and audio.get("voiceover_end") is not None:
         base["audio"]["voiceover_start"] = round(_num(audio["voiceover_start"], -1), 3)
         base["audio"]["voiceover_end"] = round(_num(audio["voiceover_end"], -1), 3)
@@ -639,6 +642,8 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
             paced = min(max(paced, span * 0.7), span * 1.25)
             segment["output_duration"] = round(paced, 3)
         segment["captions"] = []
+        if voice.get("mute"):
+            segment["captions_enabled"] = False
         if segment["captions_enabled"]:
             segment["captions"] = _words_inside(words, audio_start, audio_end)
             if not segment["captions"]:

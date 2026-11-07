@@ -345,6 +345,8 @@ def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name,
     if has_audio:
         a_start, a_end = audio_trim if audio_trim is not None else (trim_start, trim_end)
         audio = [f"atrim=start={a_start:.3f}:end={a_end:.3f}", "asetpts=PTS-STARTPTS"]
+        if segment.get("audio", {}).get("mute"):
+            audio.append("volume=0")
         gain = float(segment.get("audio", {}).get("gain_db") or 0)
         if abs(gain) >= 0.2:
             audio.append(f"volume={gain:.2f}dB")
