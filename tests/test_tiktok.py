@@ -76,3 +76,13 @@ def test_tiktok_pipeline_adds_music_without_upload(settings, sample_video):
     assert changed["hook"] == "A FIELD CHECK"
     assert changed["segments"][0]["audio"]["mute"]
     app.extensions["gate"].shutdown()
+
+
+def test_audio_repair_retains_tiktok_soundtrack():
+    from osp.schema import revise_plan
+    plan = {
+        "segments": [default_segment(0, 5)], "meta": {"editing_style": "tiktok"},
+        "music": {"use_bed": True}, "global_audio": {"normalize_loudness": True},
+    }
+    revised = revise_plan(plan, {"checks": [{"name": "audio_clipping", "passed": False}]}, {})
+    assert revised["music"]["use_bed"]

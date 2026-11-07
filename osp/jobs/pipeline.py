@@ -245,6 +245,8 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
                 manifest["score"] = (export_plan.get("meta") or {}).get("clip_score")
                 last_reports.append({"orientation": orientation, **report})
                 if not report.get("passed"):
+                    log.warning("Job %s quality check failed: %s", job_id, [c for c in report.get("checks", []) if not c.get("passed")])
+                    store.update_status(job_id, qa={"passed": False, "reports": last_reports})
                     # A failed export is revised before the other shape is encoded.
                     break
                 outputs.append(manifest)

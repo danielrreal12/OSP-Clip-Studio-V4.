@@ -553,6 +553,8 @@ def _finish_audio(source: Path, dest: Path, plan: dict, music: Path | None, sett
         tail.append("highpass=f=90")
     if normalize:
         tail.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+    if (plan.get("meta") or {}).get("editing_style") == "tiktok":
+        tail.append("alimiter=limit=0.75:level=false:latency=true")
     tail_chain = ",".join(tail)
     if use_music:
         base = float(plan["music"].get("base_volume") or 0.1)
@@ -611,6 +613,8 @@ def _finish_audio(source: Path, dest: Path, plan: dict, music: Path | None, sett
             "+faststart",
             str(dest),
         ]
+    if (plan.get("meta") or {}).get("editing_style") == "tiktok":
+        args[-1:-1] = ["-t", f"{probe_duration(source):.3f}"]
     try:
         run_ffmpeg(args, timeout=settings.ffmpeg_timeout_sec, log_path=work / "audio-final.log")
     except RenderError:
