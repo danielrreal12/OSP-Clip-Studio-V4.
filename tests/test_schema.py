@@ -129,3 +129,28 @@ def test_voiceover_captions_follow_audio_instead_of_broll():
     assert kept["source_start"] == 6
     assert kept["output_duration"] == 1.5
     assert [word["word"] for word in kept["captions"]] == ["Actual", "explanation"]
+
+
+@pytest.mark.parametrize("requested", [1, 100])
+def test_invalid_model_pacing_is_repaired_before_validation(requested):
+    segment = default_segment(2, 22)
+    segment["output_duration"] = requested
+    plan = refine_plan({"segments": [segment]}, _analysis(30), _settings(), {"mode": "highlights"})
+    assert 16 <= plan["segments"][0]["output_duration"] <= 25
+    assert any("pacing" in note for note in plan["meta"]["refinements"])
+
+
+def test_speech_timing_repair_uses_natural_speed():
+    segment = default_segment(1, 11)
+    segment["output_duration"] = 1
+    analysis = _analysis(20, [{"word": "explanation", "start": 2, "end": 3}])
+    plan = refine_plan({"segments": [segment]}, analysis, _settings(), {"mode": "highlights"})
+    assert plan["segments"][0]["output_duration"] == 10
+
+
+def test_timing_repair_still_rejects_out_of_bounds_and_bad_voiceover():
+    for segment in [default_segment(2, 40), default_segment(2, 6)]:
+        if segment["source_end"] == 6:
+            segment["audio"].update(voiceover_start=7, voiceover_end=18)
+        with pytest.raises(PlanValidationError):
+            refine_plan({"segments": [segment]}, _analysis(30), _settings(), {"mode": "highlights"})

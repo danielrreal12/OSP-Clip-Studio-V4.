@@ -571,12 +571,35 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
     """Normalize a model plan and apply safety constraints the renderer can trust."""
     mode = options.get("mode") if options.get("mode") in {"highlights", "full"} else "highlights"
     plan = coerce_plan(raw, mode)
+    notes: list[str] = []
+    # Repair pacing before semantic validation. Models sometimes put a target
+    # highlight length in output_duration for a much longer selected source span.
+    # Never repair source boundaries or stretch speech to meet that target.
+    words_for_timing = (analysis.get("transcript") or {}).get("words") or []
+    lines_for_timing = (analysis.get("transcript") or {}).get("segments") or []
+    for segment in plan["segments"]:
+        start, end = segment["source_start"], segment["source_end"]
+        span = end - start
+        if not (0 <= start < end <= float(analysis["duration"])) or span < 0.4:
+            continue
+        voice = segment.get("audio") or {}
+        if "voiceover_start" in voice:
+            # Voiceover length and video fit remain subject to semantic checks.
+            continue
+        speech = not voice.get("mute") and any(
+            _overlaps(start, end, float(item["start"]), float(item["end"]))
+            for item in (words_for_timing or lines_for_timing)
+        )
+        desired = span if speech else max(span * 0.8, min(span * 1.25, segment["output_duration"]))
+        desired = round(desired, 3)
+        if abs(desired - segment["output_duration"]) > 0.001:
+            segment["output_duration"] = desired
+            notes.append("Normalized segment pacing to preserve natural speech and avoid extreme speed changes.")
     errors = schema_errors(plan)
     errors.extend(semantic_errors(plan, float(analysis["duration"]), mode))
     if errors:
         raise PlanValidationError(errors)
 
-    notes: list[str] = []
     duration = float(analysis["duration"])
     words = analysis.get("transcript", {}).get("words") or []
     fillers = analysis.get("transcript", {}).get("fillers") or []
@@ -639,7 +662,7 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
             segment["output_duration"] = round(span, 3)
         else:
             paced = float(segment["output_duration"])
-            paced = min(max(paced, span * 0.7), span * 1.25)
+            paced = min(max(paced, span * 0.8), span * 1.25)
             segment["output_duration"] = round(paced, 3)
         segment["captions"] = []
         if voice.get("mute"):
