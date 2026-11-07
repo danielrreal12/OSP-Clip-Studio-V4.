@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import threading
@@ -113,6 +114,8 @@ def register_uploads(app):
                             raise ValueError("Incomplete upload chunk.")
                         handle.write(block)
                         remaining -= len(block)
+                    handle.flush()
+                    os.fsync(handle.fileno())
                     save(folder, {**data, "offset": offset + length})
                 except Exception:
                     handle.truncate(offset)

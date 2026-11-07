@@ -718,7 +718,8 @@ def apply_user_edits(plan: dict, edits: list[dict], analysis: dict, settings, op
         source["source_start"] = _num(edit.get("source_start"), source["source_start"])
         source["source_end"] = _num(edit.get("source_end"), source["source_end"])
         span = max(0.45, source["source_end"] - source["source_start"])
-        source["output_duration"] = span
+        voice = source.get("audio") or {}
+        source["output_duration"] = (voice["voiceover_end"] - voice["voiceover_start"]) if "voiceover_start" in voice else span
         source["sequence"] = index + 1
         segments.append(source)
     if not segments:
