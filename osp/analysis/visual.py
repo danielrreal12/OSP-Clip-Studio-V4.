@@ -24,12 +24,20 @@ def iter_gray_frames(path: Path, fps: float, limit: int = 2400, proxy: Path | No
         "-loglevel",
         "error",
         "-y",
+        "-threads",
+        "1",
         "-i",
         str(path),
+        "-filter_threads",
+        "1",
+        "-filter_complex_threads",
+        "1",
         "-map",
         "0:v:0",
         "-vf",
         f"fps={fps},scale={WIDTH}:{HEIGHT},format=gray",
+        "-threads",
+        "1",
         "-f",
         "rawvideo",
         "-pix_fmt",
@@ -43,13 +51,15 @@ def iter_gray_frames(path: Path, fps: float, limit: int = 2400, proxy: Path | No
                 "0:v:0",
                 "-an",
                 "-vf",
-                "fps=8,scale=480:-2",
+                "fps=8,scale=320:180",
                 "-c:v",
                 "libx264",
                 "-preset",
                 "ultrafast",
                 "-crf",
                 "32",
+                "-threads",
+                "1",
                 "-pix_fmt",
                 "yuv420p",
                 str(proxy),
@@ -74,6 +84,9 @@ def iter_gray_frames(path: Path, fps: float, limit: int = 2400, proxy: Path | No
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=10)
+        if proc.returncode != 0:
+            from osp.errors import MediaError
+            raise MediaError("Video sampling failed. The file may be damaged or unsupported.")
 
 
 def sample_quality(path: Path, duration: float, proxy: Path | None = None) -> list[dict]:

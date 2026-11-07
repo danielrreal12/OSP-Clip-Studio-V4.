@@ -10,6 +10,9 @@ const drop = document.querySelector("#drop");
 let config = null;
 let timer = null;
 let currentJob = null;
+let polling = false;
+let outputKey = "";
+let previewUrl = null;
 
 const STAGE_LABELS = {
   probe: "Read the file",
@@ -77,12 +80,46 @@ drop.addEventListener("drop", (event) => {
   const transfer = new DataTransfer();
   transfer.items.add(file);
   videoInput.files = transfer.files;
-  filename.textContent = file.name;
+  updateFile();
 });
 videoInput.addEventListener("change", () => {
+  updateFile();
+});
+
+function updateFile() {
   const file = videoInput.files[0];
   filename.textContent = file ? file.name : "Drop a video or choose one";
-});
+  const preview = document.querySelector("#source-preview");
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = file ? URL.createObjectURL(file) : null;
+  preview.hidden = !file;
+  if (file) preview.src = previewUrl;
+  else preview.removeAttribute("src");
+  document.querySelector("#file-meta").textContent = file
+    ? (file.size / 1024 / 1024).toFixed(1) + " MB · Ready to upload"
+    : "MP4, MOV, WEBM · phone or Chromebook";
+}
+
+function uploadVideo(body) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/jobs");
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round(event.loaded / event.total * 100);
+        setMessage(percent < 100 ? "Uploading " + percent + "%" : "Checking your video…", percent);
+      }
+    };
+    xhr.onload = () => {
+      const payload = xhr.response || {};
+      if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
+      else reject(new Error(payload.message || "Upload failed. Please try again."));
+    };
+    xhr.onerror = () => reject(new Error("The upload connection dropped. Please try again."));
+    xhr.send(body);
+  });
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -112,13 +149,15 @@ form.addEventListener("submit", async (event) => {
   jobCard.hidden = false;
   showFormAlert("");
   showAlert("");
+  document.querySelector("#plan").hidden = true;
+  document.querySelector("#compare").hidden = true;
+  document.querySelector("#actions").hidden = true;
+  outputKey = "";
   setMessage("Uploading…", 2);
   jobCard.scrollIntoView({ block: "start" });
   const body = new FormData(form);
   try {
-    const response = await fetch("/api/jobs", { method: "POST", body });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.message || "Upload failed");
+    const payload = await uploadVideo(body);
     currentJob = payload.job;
     sessionStorage.setItem("osp-job", currentJob);
     submit.textContent = "Working…";
@@ -134,21 +173,26 @@ form.addEventListener("submit", async (event) => {
 });
 
 async function poll() {
-  if (!currentJob) return;
+  if (!currentJob || polling) return;
+  polling = true;
+  const job = currentJob;
   try {
     const response = await fetch("/api/jobs/" + currentJob);
     const status = await response.json();
     if (!response.ok) throw new Error(status.message || "Status failed");
+    if (job !== currentJob) return;
     renderStatus(status);
     if (status.state === "done" || status.state === "error") {
       clearInterval(timer);
       timer = null;
       submit.disabled = false;
       submit.textContent = "Create the edit";
-      if (status.plan_ready || status.state === "done") loadPlan();
+      if (status.plan_ready || status.state === "done") loadPlan().catch(() => showAlert("Could not load the timeline. Refresh to try again."));
     }
   } catch (error) {
     showAlert(error.message || "The connection dropped. This page will keep checking.");
+  } finally {
+    polling = false;
   }
 }
 
@@ -212,18 +256,21 @@ function money(value) {
 function renderOutputs(status) {
   const compare = document.querySelector("#compare");
   const actions = document.querySelector("#actions");
+  const key = JSON.stringify([currentJob, status.outputs, status.failed_output, status.retry_available, status.state]);
+  if (key === outputKey) return;
+  outputKey = key;
   compare.replaceChildren();
   actions.replaceChildren();
   const outputs = status.outputs || [];
   const failed = status.failed_output;
-  if (!outputs.length && !failed && status.state !== "done") {
+  if (!outputs.length && !failed && !status.retry_available && status.state !== "done") {
     compare.hidden = true;
     actions.hidden = true;
     return;
   }
   compare.hidden = false;
   actions.hidden = false;
-  if (outputs.length > 1) compare.classList.add("two");
+  compare.classList.toggle("two", outputs.length > 0);
   addVideo(compare, "Original", `/api/jobs/${currentJob}/media/source`);
   outputs.forEach((output) => {
     addVideo(compare, labelFor(output.orientation), output.url);
@@ -314,7 +361,7 @@ function segmentCard(segment, index) {
   const box = document.createElement("input");
   box.type = "checkbox";
   box.className = "keep";
-  box.checked = true;
+  box.checked = segment.keep !== false;
   keep.append(box, document.createTextNode(" Keep"));
   const score = document.createElement("span");
   score.textContent = "Importance " + Number(segment.importance || 0).toFixed(2);
@@ -353,20 +400,24 @@ function saveCuts(list) {
 
 async function postJson(url, payload) {
   showAlert("");
-  setMessage("Queued…", 4);
-  const response = await fetch(url, {
-    method: url.endsWith("/plan") ? "PUT" : "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    showAlert(data.message || "The request failed.");
-    return;
+  try {
+    const response = await fetch(url, {
+      method: url.endsWith("/plan") ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "The request failed.");
+    setMessage("Queued…", 4);
+    submit.disabled = true;
+    submit.textContent = "Working…";
+    document.querySelector("#plan").hidden = true;
+    if (timer) clearInterval(timer);
+    poll();
+    timer = setInterval(poll, 1600);
+  } catch (error) {
+    showAlert(error.message || "Could not reach the studio. Please try again.");
   }
-  if (timer) clearInterval(timer);
-  poll();
-  timer = setInterval(poll, 1600);
 }
 
 function button(text, onClick) {
@@ -378,6 +429,7 @@ function button(text, onClick) {
 }
 
 function setMessage(text, progress) {
+  document.querySelector(".bar").setAttribute("aria-valuenow", Math.round(Math.max(0, Math.min(100, progress || 0))));
   document.querySelector("#job-message").textContent = text;
   document.querySelector("#fill").style.width = Math.max(0, Math.min(100, progress || 0)) + "%";
 }

@@ -4,6 +4,18 @@ Autonomous editor for outside-plant video: fiber, coax, CATV, poles, buckets, sp
 
 V4 color presets (`night`, `cinematic`, `punchy`, `clean`) are gone. A client that still posts `style` gets a warning and an edit based on the footage.
 
+## Reliability and usability update
+
+- Retry, timeline re-render, and director revision run with the application context they need.
+- Queue admission reserves each job once and saves its queued status before work starts.
+- Shot detection streams 320×180 frames at 8 fps into PySceneDetect, avoiding OpenCV decoder pools and frame queues. Gray quality and motion samples remain 160×90.
+- Vision stills are extracted sequentially, so 16 requested images no longer open 16 source decoders at once.
+- FFmpeg decoders, filters, and encoders use one thread. H.264 exports disable frame lookahead to reduce retained buffers. OpenCV and numerical library thread pools are also bounded.
+- Audio quality review skips video decoding.
+- The studio previews your selected video, shows upload progress, preserves export playback while polling, and keeps Retry visible even if no export was produced.
+
+A regression test monitors the combined resident memory of the app and FFmpeg children, terminates the test if they exceed 512 MiB, and checks a 30.4-second 4K input, 16 vision stills, and both 720p export shapes with the web app and provider SDK resident. It uses the test AI provider and does not call OpenAI. Local analysis plus 16 stills peaked around 200 MiB; a complete export run peaked around 285 MiB before loading the web app and SDK. Those measurements are specific to the synthetic test video, not a guarantee for every codec or input.
+
 ## What it does
 
 1. **Measure.** PySceneDetect finds shot changes. A histogram pass adds any hard cut it missed. OpenCV reads luminance, blur, and sparse optical flow. FFmpeg measures silence, loudness, clipping, and a half-second energy curve.
@@ -42,7 +54,7 @@ Tests use a local stand-in that still has to read the measured evidence. They do
 
 `render.yaml` is a Docker web service with a 10 GB disk mounted at `/var/data` and `WORK_DIR=/var/data/osp`. Set `OPENAI_API_KEY` in the Render dashboard. Do not put the key in git.
 
-This repo was not deployed to Render from here. After you merge and deploy, check `/health` (`ok: true`, `ai_configured: true`) and run one short clip before a long one. A Starter instance is enough for one 720p encode at a time. `MAX_CONCURRENT_JOBS` defaults to 1 because FFmpeg is the memory limit. Free instances sleep and lose a disk that is not attached; without the disk, files live under `/tmp` and disappear on restart.
+This repo was not deployed to Render from here. After you merge and deploy, check `/health` (`ok: true`, `ai_configured: true`) and run one short clip before a long one. The default pipeline is tuned for one 720p encode at a time on Starter; unusual codecs or large reference-frame buffers can require more memory. `MAX_CONCURRENT_JOBS` defaults to 1 because FFmpeg is the memory limit. Free instances sleep and lose a disk that is not attached; without the disk, files live under `/tmp` and disappear on restart.
 
 A restart marks an in-progress job as interrupted. The upload is kept until `JOB_TTL_HOURS` (48). Use **Retry** so a second model call only happens when you ask for it.
 

@@ -51,10 +51,12 @@ class Gate:
         self._waiting = 0
         self.active: set[str] = set()
 
-    def submit(self, job_id: str, fn) -> bool:
+    def submit(self, job_id: str, fn, on_accept=None) -> bool:
         with self._lock:
-            if self._waiting >= self._limit:
+            if job_id in self.active or self._waiting >= self._limit:
                 return False
+            if on_accept is not None:
+                on_accept()
             self._waiting += 1
             self.active.add(job_id)
 
@@ -135,6 +137,9 @@ def recover_interrupted(store: JobStore) -> None:
 def create_app(settings: Settings | None = None, provider_factory=None) -> Flask:
     settings = settings or Settings.from_env()
     configure_logging(settings)
+    # Keep OpenCV operations from sizing thread pools to the host CPU count.
+    import cv2
+    cv2.setNumThreads(1)
     settings.work_dir.mkdir(parents=True, exist_ok=True)
     root = Path(__file__).resolve().parents[2]
     app = Flask(

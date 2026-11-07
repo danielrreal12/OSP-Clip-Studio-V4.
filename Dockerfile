@@ -16,6 +16,8 @@ COPY templates ./templates
 COPY static ./static
 
 ENV PYTHONUNBUFFERED=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
     WORK_DIR=/tmp/osp-v6
 
 EXPOSE 10000

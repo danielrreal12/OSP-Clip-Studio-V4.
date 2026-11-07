@@ -50,3 +50,40 @@ def test_silence_ranges(tmp_path):
     assert audio["silence"]
     assert audio["silence"][0]["start"] < 0.2
     assert audio["energy"]
+
+
+def test_content_detector_streams_frames_without_opencv_decoder(tmp_path, monkeypatch):
+    import cv2
+    from osp.analysis.scenes import detect_pyscenedetect
+
+    def forbidden_decoder(*args, **kwargs):
+        pytest.fail("Shot detection must not allocate an OpenCV decoder pool")
+
+    monkeypatch.setattr(cv2, "VideoCapture", forbidden_decoder)
+    path = tmp_path / "cuts.mp4"
+    make_sample(path)
+    scenes = detect_pyscenedetect(path)
+    assert len(scenes) >= 2
+    assert scenes[0]["start"] == 0
+    assert any(abs(scene["start"] - 1) < 0.3 for scene in scenes)
+    assert abs(scenes[-1]["end"] - 5.5) < 0.2
+
+
+def test_still_extraction_returns_each_requested_frame(tmp_path):
+    from osp.analysis.frames import extract_jpegs
+
+    path = tmp_path / "source.mp4"
+    make_sample(path)
+    files = extract_jpegs(path, [1.1, 2.0, 3.0], tmp_path / "stills")
+    assert [file.name for file in files] == ["000.jpg", "001.jpg", "002.jpg"]
+    assert all(file.stat().st_size > 500 for file in files)
+
+
+def test_visual_decode_failure_is_reported(tmp_path):
+    from osp.analysis.visual import sample_quality
+    from osp.errors import MediaError
+
+    path = tmp_path / "broken.mp4"
+    path.write_bytes(b"invalid")
+    with pytest.raises(MediaError, match="sampling failed"):
+        sample_quality(path, 1)

@@ -11,28 +11,47 @@ log = logging.getLogger("osp.analysis.scenes")
 
 
 def detect_pyscenedetect(path: Path) -> list[dict]:
-    from scenedetect import ContentDetector, SceneManager, open_video
+    # SceneManager's OpenCV backend creates an automatic decoder thread pool
+    # and a frame queue whose buffers grow with the host CPU count.
+    # Feed the detector one fixed-size frame at a time instead.
+    import subprocess
+    from scenedetect import ContentDetector
 
-    video = open_video(str(path))
+    fps, width, height = 8, 320, 180
+    detector = ContentDetector(threshold=27.0, min_scene_len=8)
+    cmd = [
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-threads", "1", "-i", str(path), "-an",
+        "-filter_threads", "1", "-vf", f"fps={fps},scale={width}:{height}",
+        "-threads", "1", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1",
+    ]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    edges = [0]
+    count = 0
     try:
-        manager = SceneManager()
-        manager.auto_downscale = True
-        manager.add_detector(ContentDetector(threshold=27.0, min_scene_len=8))
-        manager.detect_scenes(video, show_progress=False)
-        scenes = []
-        for start, end in manager.get_scene_list():
-            scenes.append(
-                {
-                    "start": round(float(start.get_seconds()), 3),
-                    "end": round(float(end.get_seconds()), 3),
-                    "detector": "pyscenedetect",
-                }
-            )
-        return [s for s in scenes if s["end"] - s["start"] >= 0.2]
+        assert proc.stdout is not None
+        while True:
+            frame = proc.stdout.read(width * height * 3)
+            if len(frame) != width * height * 3:
+                break
+            image = np.frombuffer(frame, dtype=np.uint8).reshape(height, width, 3)
+            edges.extend(detector.process_frame(count, image))
+            count += 1
+        edges.extend(detector.post_process(count))
+        if proc.wait(timeout=30) != 0:
+            raise RuntimeError("Scene decoding failed")
     finally:
-        close = getattr(video, "close", None) or getattr(video, "release", None)
-        if callable(close):
-            close()
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=10)
+    edges = sorted({0, count, *(edge for edge in edges if 0 < edge < count)})
+    return [
+        {"start": round(start / fps, 3), "end": round(end / fps, 3),
+         "detector": "pyscenedetect"}
+        for start, end in zip(edges, edges[1:]) if end - start >= 2
+    ]
 
 
 def scenes_from_samples(samples: list[dict], duration: float) -> list[dict]:
