@@ -4,6 +4,16 @@ Autonomous editor for outside-plant video: fiber, coax, CATV, poles, buckets, sp
 
 V4 color presets (`night`, `cinematic`, `punchy`, `clean`) are gone. A client that still posts `style` gets a warning and an edit based on the footage.
 
+## Reliability and usability update
+
+- Retry, timeline re-render, and director revision run with the application context they need.
+- Queue admission reserves each job once and saves its queued status before work starts, so a fast worker cannot have its finished status overwritten.
+- Video uploads enforce their own size limit, independently of the combined video-and-music request allowance.
+- The studio previews your selected video, shows upload progress, preserves export playback while polling, and keeps Retry available even if no export was produced.
+- Hidden panels stay hidden across desktop and phone layouts. Keyboard focus and progress announcements are available.
+
+Validated with 25 Python tests, including real FFmpeg exports for upload, timeline changes, director revisions, and retries. Chromium checks covered desktop upload/export and timeline re-render, missing-key feedback, visible retry actions, and phone layout. AI responses in these checks came from the test provider; live OpenAI calls and a live Render deployment were not verified.
+
 ## What it does
 
 1. **Measure.** PySceneDetect finds shot changes. A histogram pass adds any hard cut it missed. OpenCV reads luminance, blur, and sparse optical flow. FFmpeg measures silence, loudness, clipping, and a half-second energy curve.

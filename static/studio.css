@@ -93,3 +93,12 @@ button:disabled { opacity: 0.45; }
   .layout:has(#job:not([hidden])) { max-width: 1080px; grid-template-columns: 380px 1fr; align-items: start; }
   .compare.two { grid-template-columns: 1fr 1fr; }
 }
+
+[hidden] { display: none !important; }
+.source-preview { width: 100%; max-height: 320px; margin-top: 12px; border-radius: 12px; background: #000; }
+button, .actions a { cursor: pointer; }
+button:disabled { cursor: wait; }
+:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; }
+.drop:focus-within { outline: 3px solid var(--amber); outline-offset: 4px; }
+.drop-title { overflow-wrap: anywhere; max-width: 100%; }
+@media (prefers-reduced-motion: reduce) { #fill { transition: none; } }

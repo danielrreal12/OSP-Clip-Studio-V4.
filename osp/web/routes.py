@@ -131,9 +131,9 @@ def register_routes(app) -> None:
         edits = body.get("segments")
         if not isinstance(edits, list):
             return jsonify(error="invalid", message="Send a segments list."), 400
-        if not _gate().submit(job, lambda: rerender_job(job, _store(), _settings(), edits)):
+        if not _submit(job, lambda: rerender_job(job, _store(), _settings(), edits),
+                       state="queued", progress=4, message="Re-rendering your timeline", error_type=None):
             return jsonify(error="busy", message="The render queue is full. Try again shortly."), 429
-        _store().update_status(job, state="queued", progress=4, message="Re-rendering your timeline", error_type=None)
         return jsonify(job=job), 202
 
     @app.post("/api/jobs/<job>/redirect")
@@ -154,9 +154,9 @@ def register_routes(app) -> None:
                 return
             redirect_job(job, _store(), _settings(), provider, instructions[:2000])
 
-        if not _gate().submit(job, work):
+        if not _submit(job, work, state="queued", progress=4,
+                       message="Asking the director to revise the cut", error_type=None):
             return jsonify(error="busy", message="The render queue is full. Try again shortly."), 429
-        _store().update_status(job, state="queued", progress=4, message="Asking the director to revise the cut", error_type=None)
         return jsonify(job=job), 202
 
     @app.post("/api/jobs/<job>/retry")
@@ -176,17 +176,9 @@ def register_routes(app) -> None:
                 return
             run_job(job, _store(), _settings(), provider)
 
-        if not _gate().submit(job, work):
+        if not _submit(job, work, state="queued", progress=0, message="Retrying",
+                       error_type=None, attempts=int(status.get("attempts") or 0) + 1, retry_available=False):
             return jsonify(error="busy", message="The render queue is full. Try again shortly."), 429
-        _store().update_status(
-            job,
-            state="queued",
-            progress=0,
-            message="Retrying",
-            error_type=None,
-            attempts=int(status.get("attempts") or 0) + 1,
-            retry_available=False,
-        )
         return jsonify(job=job), 202
 
     @app.get("/api/jobs/<job>/media/<kind>")
@@ -306,6 +298,9 @@ def _accept_upload(legacy: bool = False):
     except FileExistsError:
         return jsonify(error="server", message="Could not start a job. Try again."), 500
     upload.save(folder / source_file)
+    if (folder / source_file).stat().st_size > settings.max_upload_mb * 1024 * 1024:
+        shutil.rmtree(folder, ignore_errors=True)
+        return jsonify(error="file_too_large", message=f"Video exceeds {settings.max_upload_mb} MB."), 413
     try:
         info = probe_media(folder / source_file)
     except MediaError as exc:
@@ -352,17 +347,25 @@ def _accept_upload(legacy: bool = False):
             return
         run_job(job, _store(), _settings(), provider)
 
-    # The worker runs outside the request. Push an app context so the factory can read extensions.
+    if not _submit(job, work):
+        shutil.rmtree(folder, ignore_errors=True)
+        return jsonify(error="busy", message="The server is already editing as many videos as it can. Try again shortly."), 429
+    return jsonify(job=job, ignored_style=bool(request.form.get("style"))), 202
+
+
+def _submit(job, work, **changes):
+    """Reserve each job once, persist queued state, then start with app context."""
     app = current_app._get_current_object()
+    store = _store()
 
     def wrapped():
         with app.app_context():
             work()
 
-    if not _gate().submit(job, wrapped):
-        shutil.rmtree(folder, ignore_errors=True)
-        return jsonify(error="busy", message="The server is already editing as many videos as it can. Try again shortly."), 429
-    return jsonify(job=job, ignored_style=bool(request.form.get("style"))), 202
+    return _gate().submit(
+        job, wrapped,
+        on_accept=(lambda: store.update_status(job, **changes)) if changes else None,
+    )
 
 
 def _has_audio(path: Path) -> bool:

@@ -51,10 +51,12 @@ class Gate:
         self._waiting = 0
         self.active: set[str] = set()
 
-    def submit(self, job_id: str, fn) -> bool:
+    def submit(self, job_id: str, fn, on_accept=None) -> bool:
         with self._lock:
-            if self._waiting >= self._limit:
+            if job_id in self.active or self._waiting >= self._limit:
                 return False
+            if on_accept is not None:
+                on_accept()
             self._waiting += 1
             self.active.add(job_id)
 

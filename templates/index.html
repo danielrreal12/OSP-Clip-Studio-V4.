@@ -22,7 +22,7 @@
   <main class="layout">
     <section class="card" aria-labelledby="upload-title">
       <h1 id="upload-title">Edit from the footage</h1>
-      <p class="lede">The cut is decided from shots, motion, speech, and what is actually in the frames. Presets are not applied.</p>
+      <p class="lede">Turn field footage into a finished clip. Upload a video, choose your format, and review the timeline before sharing.</p>
       <div id="config-banner" class="banner" hidden></div>
       <form id="form">
         <label class="drop" id="drop">
@@ -30,6 +30,7 @@
           <span class="drop-title" id="filename">Drop a video or choose one</span>
           <span class="drop-meta" id="file-meta">MP4, MOV, WEBM · phone or Chromebook</span>
         </label>
+        <video id="source-preview" class="source-preview" controls playsinline preload="metadata" hidden></video>
         <fieldset class="choice">
           <legend>Edit</legend>
           <label><input type="radio" name="mode" value="highlights" checked> Highlights</label>
@@ -46,7 +47,7 @@
         <label class="stack" for="music">Music you have rights to <span>optional</span></label>
         <input id="music" name="music" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac">
         <p class="estimate" id="estimate"></p>
-        <p id="form-alert" class="banner bad" hidden></p>
+        <p id="form-alert" role="alert" class="banner bad" hidden></p>
         <button id="submit" type="submit">Create the edit</button>
       </form>
     </section>
@@ -55,7 +56,7 @@
         <h2 id="job-title">Working</h2>
         <p id="job-message"></p>
       </div>
-      <div class="bar" aria-hidden="true"><div id="fill"></div></div>
+      <div class="bar" role="progressbar" aria-label="Edit progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="fill"></div></div>
       <ol id="stages" class="stages"></ol>
       <div id="alert" class="banner bad" hidden></div>
       <ul id="warnings" class="warnings"></ul>
