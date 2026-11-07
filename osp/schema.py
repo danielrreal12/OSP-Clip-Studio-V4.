@@ -567,6 +567,51 @@ def _black_ratio(start: float, end: float, samples: list[dict]) -> float:
     return sum(1 for s in window if s.get("black")) / len(window)
 
 
+
+def _remove_repeated_footage(segments, words, notes):
+    kept = []
+    for segment in segments:
+        start, end = segment["source_start"], segment["source_end"]
+        spans = [(start, end)]
+        for earlier in kept:
+            remaining = []
+            for a, b in spans:
+                left, right = earlier["source_start"], earlier["source_end"]
+                if min(b, right) <= max(a, left):
+                    remaining.append((a, b))
+                else:
+                    if a < left:
+                        remaining.append((a, left))
+                    if right < b:
+                        remaining.append((right, b))
+            spans = remaining
+        if spans == [(start, end)]:
+            kept.append(segment)
+            continue
+        # A narration track cannot be shortened without changing its meaning.
+        if "voiceover_start" in (segment.get("audio") or {}):
+            spans = []
+        candidates = []
+        for a, b in spans:
+            for word in words:
+                if word["start"] < a < word["end"]:
+                    a = word["end"]
+                if word["start"] < b < word["end"]:
+                    b = word["start"]
+            if b - a >= 0.45:
+                candidates.append((a, b))
+        if not candidates:
+            notes.append("Removed a repeated shot rather than replaying the same footage.")
+            continue
+        a, b = max(candidates, key=lambda pair: pair[1] - pair[0])
+        ratio = segment["output_duration"] / (end - start)
+        segment["source_start"], segment["source_end"] = round(a, 3), round(b, 3)
+        segment["output_duration"] = round((b - a) * ratio, 3)
+        kept.append(segment)
+        notes.append("Trimmed an overlapping selection to keep its unique footage.")
+    return kept
+
+
 def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
     """Normalize a model plan and apply safety constraints the renderer can trust."""
     mode = options.get("mode") if options.get("mode") in {"highlights", "full"} else "highlights"
@@ -645,6 +690,8 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
         raise PlanValidationError(
             ["No usable segment remained after removing black frames, dead air, and sensitive material."]
         )
+
+    refined = _remove_repeated_footage(refined, words, notes)
 
     for segment in refined:
         voice = segment.get("audio") or {}
