@@ -8,7 +8,7 @@ from osp.render.executor import render_edit
 from osp.schema import default_segment, refine_plan
 
 
-@pytest.mark.parametrize("style", ["natural", "capcut"])
+@pytest.mark.parametrize("style", ["natural", "capcut", "tiktok"])
 def test_voiceover_uses_selected_audio_and_title_does_not_add_card(settings, tmp_path, style):
     source = tmp_path / "two-tones.mp4"
     subprocess.run([
@@ -31,9 +31,9 @@ def test_voiceover_uses_selected_audio_and_title_does_not_add_card(settings, tmp
     # Also cover the dynamic reframing path used for detail shots.
     segment["camera"] = {"move": "push_in", "amount": 0.04}
     plan = refine_plan({
-        "title": "Inside the cabinet", "open_with_title": True, "segments": [segment],
+        "title": "Inside the cabinet", "hook": "NO LIGHT. NOW WHAT?", "closing_line": "NEXT: TEST THE CONNECTION", "open_with_title": True, "segments": [segment],
         "global_audio": {"enhance_speech": False, "normalize_loudness": False},
-    }, analysis, settings, {"mode": "highlights", "editing_style": style, "subject_tracking": style == "capcut"})
+    }, analysis, settings, {"mode": "highlights", "editing_style": style, "subject_tracking": style in {"capcut", "tiktok"}})
     output = tmp_path / "edit.mp4"
     manifest = render_edit(
         source=source, plan=plan, analysis=analysis, settings=settings,

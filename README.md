@@ -4,6 +4,14 @@ Autonomous editor for outside-plant video: fiber, coax, CATV, poles, buckets, sp
 
 V4 color presets (`night`, `cinematic`, `punchy`, `clean`) are gone. A client that still posts `style` gets a warning and an edit based on the footage.
 
+## Finished TikTok posts
+
+**TikTok · Gritty field-work** is the default page preset: a complete 18–30 second highlight when supported by the footage, with an evidence-based opening hook, work-beat labels, a truthful closing next step, bold animated captions inside conservative UI-safe margins, punchy crops, and an original locally synthesized instrumental bed with restrained cut accents. Uploading your own music replaces that bed. The original audio remains at natural speed and the bed is ducked under it.
+
+Automatic clip groups now preserve complete stories rather than splitting one short edit into 3–8 second fragments. A short validated timeline exports as one post; longer selections can yield several distinct posts. Short source footage is not padded to pretend it contains more work.
+
+Exports remain 9:16 H.264/AAC with fast-start metadata. This prepares downloadable posts; it does not publish to TikTok or guarantee performance.
+
 ## Social edits and automatic vertical highlights
 
 Choose **CapCut-style** for bold three-word caption groups with a yellow active-word pop, alternating punch-ins and occasional short dissolves. Speech stays at natural speed. An uploaded music track enables measured onset alignment on nearby non-speaking cuts; the app keeps the original pacing when no clear beat is found.

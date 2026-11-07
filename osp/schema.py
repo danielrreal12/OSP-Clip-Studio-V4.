@@ -42,6 +42,7 @@ SEGMENT_SCHEMA: dict[str, Any] = {
         "chapter_card",
     ],
     "properties": {
+        "on_screen_label": {"type": "string", "maxLength": 60},
         "sequence": {"type": "integer", "minimum": 0, "maximum": 99},
         "source_start": {"type": "number", "minimum": 0},
         "source_end": {"type": "number", "minimum": 0},
@@ -163,6 +164,8 @@ PLAN_SCHEMA: dict[str, Any] = {
         "warnings",
     ],
     "properties": {
+        "hook": {"type": "string", "maxLength": 70},
+        "closing_line": {"type": "string", "maxLength": 70},
         "title": {"type": "string", "minLength": 1, "maxLength": 70},
         "summary": {"type": "string", "maxLength": 800},
         "mode": {"enum": ["highlights", "full"]},
@@ -305,6 +308,8 @@ def _fill_segment(raw: dict, index: int) -> dict:
             "chapter_card": chapter,
         }
     )
+    if raw.get("on_screen_label"):
+        base["on_screen_label"] = redact_text(str(raw["on_screen_label"]))[:60]
     if audio.get("mute"):
         base["audio"]["mute"] = True
     if audio.get("voiceover_start") is not None and audio.get("voiceover_end") is not None:
@@ -328,6 +333,8 @@ def coerce_plan(raw: Any, mode: str) -> dict:
     warnings = [str(item)[:240] for item in (data.get("warnings") or []) if str(item).strip()][:12]
     return {
         "title": (str(data.get("title") or "OSP Field Notes").strip()[:70] or "OSP Field Notes"),
+        "hook": redact_text(str(data.get("hook") or ""))[:70],
+        "closing_line": redact_text(str(data.get("closing_line") or ""))[:70],
         "summary": str(data.get("summary") or "").strip()[:800],
         "mode": mode if mode in {"highlights", "full"} else (data.get("mode") if data.get("mode") in {"highlights", "full"} else "highlights"),
         "open_with_title": bool(data.get("open_with_title")),
@@ -733,7 +740,7 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
 
     # Cap highlight length by dropping the weakest shots.
     if mode == "highlights":
-        budget = min(settings.highlight_max_sec, max(6.0, duration))
+        budget = min(settings.highlight_max_sec, 30 if options.get("editing_style") == "tiktok" and options.get("clip_mode") != "multiple" else settings.highlight_max_sec, max(6.0, duration))
         ordered = sorted(refined, key=lambda item: item["importance"])
         while sum(item["output_duration"] for item in refined) > budget + 0.4 and len(refined) > 1:
             victim = ordered.pop(0)
@@ -775,11 +782,21 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
         "refinements": notes,
     }
     plan["meta"]["subject_tracking"] = bool(options.get("subject_tracking"))
-    if options.get("editing_style") == "capcut":
+    if options.get("editing_style") in {"capcut", "tiktok"}:
         from osp.render.style import apply_capcut
         plan = apply_capcut(plan, analysis)
         if options.get("has_music"):
             plan["music"]["use_bed"] = True
+        if options.get("editing_style") == "tiktok":
+            from osp.render.style import finish_tiktok_copy
+            plan = finish_tiktok_copy(plan, analysis)
+            plan["meta"]["editing_style"] = "tiktok"
+            plan["open_with_title"] = True
+            plan["music"].update(use_bed=True, base_volume=0.18, duck_volume=0.04)
+            plan["outro"] = None
+            for segment in plan["segments"]:
+                segment["chapter_card"] = None
+                segment["caption_placement"] = "lower"
     else:
         plan["meta"]["editing_style"] = "natural"
     return plan
@@ -803,6 +820,10 @@ def apply_user_edits(plan: dict, edits: list[dict], analysis: dict, settings, op
         span = max(0.45, source["source_end"] - source["source_start"])
         voice = source.get("audio") or {}
         source["output_duration"] = (voice["voiceover_end"] - voice["voiceover_start"]) if "voiceover_start" in voice else span
+        if isinstance(edit.get("mute"), bool):
+            source["audio"]["mute"] = edit["mute"]
+        if "on_screen_label" in edit:
+            source["on_screen_label"] = redact_text(str(edit["on_screen_label"]))[:60]
         source["sequence"] = index + 1
         segments.append(source)
     if not segments:

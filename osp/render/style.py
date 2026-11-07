@@ -80,3 +80,33 @@ def align_music_beats(plan, analysis, music):
     if not beats:
         revised.setdefault("warnings", []).append("No clear music beats were detected; kept the planned pacing.")
     return revised
+
+
+
+def finish_tiktok_copy(plan, analysis):
+    text = ((analysis.get("transcript") or {}).get("text") or "").lower()
+    if not plan.get("hook"):
+        if "not getting light" in text or "not transmitting light" in text:
+            plan["hook"] = "NO LIGHT. NOW WHAT?"
+        else:
+            plan["hook"] = plan["title"].upper()
+    if not plan.get("closing_line"):
+        plan["closing_line"] = "NEXT: TEST A TRANSMITTER" if "try a new transmitter" in text else "MORE WORK. MORE FIELD NOTES."
+    for i, segment in enumerate(plan["segments"]):
+        if not segment.get("on_screen_label"):
+            spoken = " ".join(w.get("word", "") for w in segment.get("captions") or []).lower()
+            if "sfp" in spoken:
+                label = "CHECKING THE SFP"
+            elif "jumper" in spoken:
+                label = "TRYING ANOTHER JUMPER"
+            elif "transmitter" in spoken:
+                label = "THE NEXT TEST"
+            elif "fiber" in spoken or "kink" in spoken:
+                label = "THE FIBER CHECK"
+            else:
+                label = "THE WORK" if i % 2 else "THE DETAIL"
+            segment["on_screen_label"] = label
+        visual = segment["visual"]
+        visual["contrast"] = max(visual["contrast"], 1.06)
+        visual["saturation"] = max(visual["saturation"], 1.04)
+    return plan

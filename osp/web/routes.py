@@ -134,7 +134,12 @@ def register_routes(app) -> None:
         edits = body.get("segments")
         if not isinstance(edits, list):
             return jsonify(error="invalid", message="Send a segments list."), 400
-        if not _submit(job, lambda: rerender_job(job, _store(), _settings(), edits),
+        presentation = body.get("presentation") or {}
+        if not isinstance(presentation, dict) or presentation.get("editing_style", "natural") not in {"natural", "capcut", "tiktok"}:
+            return jsonify(message="Invalid editing style."), 400
+        if presentation.get("clip_mode", "single") not in {"single", "multiple"} or not isinstance(presentation.get("subject_tracking", False), bool):
+            return jsonify(message="Invalid clip or tracking option."), 400
+        if not _submit(job, lambda: rerender_job(job, _store(), _settings(), edits, presentation),
                        state="queued", progress=4, message="Re-rendering your timeline", error_type=None):
             return jsonify(error="busy", message="The render queue is full. Try again shortly."), 429
         return jsonify(job=job), 202
@@ -150,8 +155,8 @@ def register_routes(app) -> None:
             return jsonify(error="invalid", message="Write an editing instruction first."), 400
 
         editing_style = body.get("editing_style")
-        if editing_style is not None and editing_style not in {"natural", "capcut"}:
-            return jsonify(message="Choose Natural or CapCut-style."), 400
+        if editing_style is not None and editing_style not in {"natural", "capcut", "tiktok"}:
+            return jsonify(message="Choose Natural, CapCut-style or TikTok."), 400
 
         clip_mode = body.get("clip_mode")
         tracking = body.get("subject_tracking")
@@ -289,8 +294,8 @@ def _accept_upload(upload_override=None, legacy: bool = False):
         orientation = "both"
     instructions = (request.form.get("instructions") or "")[:2000]
     editing_style = request.form.get("editing_style", "natural")
-    if editing_style not in {"natural", "capcut"}:
-        return jsonify(message="Choose Natural or CapCut-style."), 400
+    if editing_style not in {"natural", "capcut", "tiktok"}:
+        return jsonify(message="Choose Natural, CapCut-style or TikTok."), 400
     warnings = []
     if request.form.get("style"):
         warnings.append("Preset styles are not applied. The cut is decided from the footage.")

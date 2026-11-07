@@ -37,13 +37,22 @@ def run_job(job_id: str, store: JobStore, settings, provider) -> None:
     _guarded(job_id, store, settings, lambda: _full(job_id, store, settings, provider))
 
 
-def rerender_job(job_id: str, store: JobStore, settings, edits: list) -> None:
+def rerender_job(job_id: str, store: JobStore, settings, edits: list, presentation=None) -> None:
     def work():
         analysis = store.read_json(job_id, "analysis.json")
         plan = store.read_json(job_id, "plan.json")
         status = store.read_status(job_id) or {}
         if not analysis or not plan:
             raise PlanValidationError(["This job has no edit plan to update yet."])
+        if presentation:
+            request = dict(status.get("request") or {})
+            for key in ("editing_style", "clip_mode", "subject_tracking"):
+                if key in presentation:
+                    request[key] = presentation[key]
+            status = store.update_status(job_id, request=request)
+            for key in ("hook", "closing_line"):
+                if key in presentation:
+                    plan[key] = str(presentation[key])[:70]
         options = _options(status)
         revised = apply_user_edits(plan, edits, analysis, settings, options)
         store.write_json(job_id, "plan.json", revised)
@@ -71,6 +80,8 @@ def redirect_job(job_id: str, store: JobStore, settings, provider, instructions:
         if subject_tracking is not None:
             options["subject_tracking"] = subject_tracking
             request["subject_tracking"] = subject_tracking
+        if options.get("editing_style") == "tiktok" or options.get("clip_mode") == "multiple":
+            options["mode"] = "highlights"
         store.update_status(job_id, request=request)
         ledger = _ledger(settings, float(analysis.get("duration") or 0))
         _restore_spend(ledger, status.get("cost") or {})
@@ -164,7 +175,7 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
     if ledger is None:
         ledger = _ledger(settings, float(analysis.get("duration") or 0))
         _restore_spend(ledger, status.get("cost") or {})
-    orientations = orientations_for(options.get("orientation") or "portrait")
+    orientations = ["portrait"] if options.get("editing_style") == "tiktok" else orientations_for(options.get("orientation") or "portrait")
     last_reports = []
     outputs = []
     started = time.monotonic()
@@ -188,6 +199,13 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
                 if work.exists():
                     shutil.rmtree(work)
                 work.mkdir(parents=True)
+                export_music = music
+                if options.get("editing_style") == "tiktok" and export_music is None:
+                    from osp.render.music import make_instrumental
+                    export_music = make_instrumental(work / "original-instrumental.wav", export_plan)
+                if options.get("editing_style") == "tiktok" and export_music is not None:
+                    from osp.render.style import align_music_beats
+                    export_plan = align_music_beats(export_plan, analysis, export_music)
                 destination = store.job_dir(job_id) / "output" / f"{export_name}.mp4"
 
                 def progress(fraction: float, index=index, orientation=orientation) -> None:
@@ -206,7 +224,7 @@ def _render_loop(job_id, store, settings, plan, analysis, source, music, ledger=
                     work=work,
                     output=destination,
                     orientation=orientation,
-                    music=music,
+                    music=export_music,
                     on_progress=progress,
                 )
                 store.mark_stage(job_id, "qa", f"Checking the {orientation} export")
@@ -384,7 +402,7 @@ def _warnings(plan: dict, analysis: dict) -> list[str]:
 def _options(status: dict) -> dict:
     request = status.get("request") or {}
     return {
-        "mode": request.get("mode") or "highlights",
+        "mode": "highlights" if request.get("editing_style") == "tiktok" or request.get("clip_mode") == "multiple" else (request.get("mode") or "highlights"),
         "orientation": request.get("orientation") or "portrait",
         "instructions": request.get("instructions") or "",
         "editing_style": request.get("editing_style") or "natural",

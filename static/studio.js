@@ -371,6 +371,17 @@ async function loadPlan() {
   stats.textContent = segments.length + " shots · " + seconds.toFixed(1) + "s" +
     (segments.some(segment => segment.audio && segment.audio.voiceover_start != null) ? " · Narration over work footage" : "");
   root.append(heading, summary, stats);
+  for (const [id, label, value] of [
+    ["edit-hook", "Opening hook", payload.plan.hook || ""],
+    ["edit-closing", "Ending line", payload.plan.closing_line || ""],
+  ]) {
+    const wrap = document.createElement("label");
+    wrap.className = "stack";
+    wrap.textContent = label;
+    const input = document.createElement("input");
+    input.id = id; input.type = "text"; input.maxLength = 70; input.value = value;
+    wrap.append(input); root.append(wrap);
+  }
   const list = document.createElement("div");
   list.className = "segments";
   (payload.plan.segments || []).forEach((segment, index) => {
@@ -435,7 +446,17 @@ function segmentCard(segment, index) {
   const times = document.createElement("div");
   times.className = "times";
   times.append(timeField("In", "start", segment.source_start), timeField("Out", "end", segment.source_end));
-  card.append(header, reason, times);
+  const sound = document.createElement("label");
+  sound.className = "stack";
+  const soundBox = document.createElement("input");
+  soundBox.type = "checkbox"; soundBox.className = "sound";
+  soundBox.checked = !voice.mute;
+  sound.append(soundBox, document.createTextNode(" Keep original sound"));
+  const label = document.createElement("input");
+  label.type = "text"; label.className = "beat-label"; label.maxLength = 60;
+  label.value = segment.on_screen_label || ""; label.placeholder = "Work-stage text";
+  label.setAttribute("aria-label", "Work-stage text");
+  card.append(header, reason, times, sound, label);
   return card;
 }
 
@@ -457,8 +478,16 @@ function saveCuts(list) {
     keep: card.querySelector(".keep").checked,
     source_start: Number(card.querySelector(".start").value),
     source_end: Number(card.querySelector(".end").value),
+    mute: !card.querySelector(".sound").checked,
+    on_screen_label: card.querySelector(".beat-label").value,
   }));
-  postJson("/api/jobs/" + currentJob + "/plan", { segments });
+  postJson("/api/jobs/" + currentJob + "/plan", { segments, presentation: {
+    editing_style: document.querySelector('input[name="editing_style"]:checked').value,
+    clip_mode: document.querySelector('input[name="clip_mode"]:checked').value,
+    subject_tracking: document.querySelector('input[name="subject_tracking"]').checked,
+    hook: document.querySelector("#edit-hook").value,
+    closing_line: document.querySelector("#edit-closing").value,
+  } });
 }
 
 async function postJson(url, payload) {

@@ -46,7 +46,7 @@ def _line(words: list[dict], active: int, style="natural") -> str:
         text = _clean(word["word"])
         if not text:
             continue
-        if style == "capcut":
+        if style in {"capcut", "tiktok"}:
             text = text.upper()
             if index == active:
                 parts.append(r"{\c&H0055EEFF&\fscx118\fscy118\t(0,90,\fscx100\fscy100)}" + text + r"{\r}")
@@ -91,7 +91,7 @@ def write_ass(
             if start >= output_duration:
                 continue
             mapped.append({"word": item["word"], "start": start, "end": min(output_duration, end)})
-        for group in _groups(mapped, max_words=3 if style == "capcut" else 4):
+        for group in _groups(mapped, max_words=3 if style in {"capcut", "tiktok"} else 4):
             for index, word in enumerate(group):
                 nxt = group[index + 1]["start"] if index + 1 < len(group) else word["end"]
                 start = word["start"]
@@ -102,8 +102,10 @@ def write_ass(
     if not events:
         return False
     alignment = 8 if placement == "upper" else 2
-    margin_v = int(height * (0.1 if placement == "upper" else 0.14))
-    font_size = int(width * (0.068 if height > width else 0.032)) if style == "capcut" else (46 if height > width else 34)
+    margin_v = int(height * (0.1 if placement == "upper" else (0.25 if style == "tiktok" else 0.14)))
+    margin_l = int(width * 0.08) if style == "tiktok" else 48
+    margin_r = int(width * 0.18) if style == "tiktok" else 48
+    font_size = int(width * (0.068 if height > width else 0.032)) if style in {"capcut", "tiktok"} else (46 if height > width else 34)
     font_size = max(14, font_size)
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -114,7 +116,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Word,DejaVu Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,0,{alignment},48,48,{margin_v},1
+Style: Word,DejaVu Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,0,{alignment},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
