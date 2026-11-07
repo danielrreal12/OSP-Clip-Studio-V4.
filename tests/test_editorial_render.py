@@ -1,13 +1,15 @@
 import subprocess
 
 import numpy as np
+import pytest
 
 from osp.media import probe_media
 from osp.render.executor import render_edit
 from osp.schema import default_segment, refine_plan
 
 
-def test_voiceover_uses_selected_audio_and_title_does_not_add_card(settings, tmp_path):
+@pytest.mark.parametrize("style", ["natural", "capcut"])
+def test_voiceover_uses_selected_audio_and_title_does_not_add_card(settings, tmp_path, style):
     source = tmp_path / "two-tones.mp4"
     subprocess.run([
         "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
@@ -31,7 +33,7 @@ def test_voiceover_uses_selected_audio_and_title_does_not_add_card(settings, tmp
     plan = refine_plan({
         "title": "Inside the cabinet", "open_with_title": True, "segments": [segment],
         "global_audio": {"enhance_speech": False, "normalize_loudness": False},
-    }, analysis, settings, {"mode": "highlights"})
+    }, analysis, settings, {"mode": "highlights", "editing_style": style, "subject_tracking": style == "capcut"})
     output = tmp_path / "edit.mp4"
     manifest = render_edit(
         source=source, plan=plan, analysis=analysis, settings=settings,

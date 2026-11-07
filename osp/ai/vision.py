@@ -133,7 +133,14 @@ def _note_from_row(row: dict, timestamp: float) -> dict:
         sensitive.append(entry)
     elements = [str(item) for item in (row.get("objects") or [])][:12]
     osp_elements = [item for item in (row.get("osp_elements") or []) if item in _ELEMENTS][:8]
+    subject = row.get("subject_box")
+    subject_box = None
+    if isinstance(subject, dict) and all(k in subject for k in ("x", "y", "w", "h")):
+        subject_box = {k: _clamp(subject[k], 0 if k in {"x", "y"} else 0.05, 1, 0.5) for k in ("x", "y", "w", "h")}
+        subject_box["w"] = min(subject_box["w"], 1-subject_box["x"])
+        subject_box["h"] = min(subject_box["h"], 1-subject_box["y"])
     return {
+        "subject_box": subject_box,
         "timestamp": timestamp,
         "summary": str(row.get("summary") or "")[:400],
         "objects": elements,

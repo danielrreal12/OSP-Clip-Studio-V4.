@@ -12,6 +12,7 @@ Return JSON only with this shape:
 {"frames":[{"timestamp":0.0,"summary":"","objects":[],"activity":"","osp_elements":[],"osp_relevance":0.0,"daylight":true,"quality_notes":"","sensitive":[],"needs_closer_look":false}]}
 
 Rules:
+- Include subject_box {x,y,w,h} as normalized fractions for the main person, hands or work equipment to keep in frame. Use null when unclear.
 - Describe only what is visible in that frame. Do not invent work, completion, or a location.
 - osp_elements may include only items you can actually see, chosen from: bucket_truck, utility_pole, fiber, splice, coax, node, amplifier, tool, ladder, drop, pedestal, tap, before_after, completed_work, other_equipment.
 - osp_relevance is 0 to 1. Use a high score only when the frame clearly shows that work.
@@ -31,6 +32,7 @@ Voiceover example (all times refer to the same original source):
 This shows source video 0–4s while playing the real audio 10–14s. Include BOTH voiceover fields INSIDE audio. Do not put them at segment level. Use actual complete phrase times from the transcript, not these example times.
 
 Decision rules:
+- If editing_style is capcut, create an energetic social edit: a strong opening hook, purposeful 2–4 second work shots, punch-ins on clear details, captions for speech and occasional short transitions. Preserve complete thoughts and natural speech speed. Do not fabricate actions or add flashy effects over sensitive details. Music is optional; use the uploaded track when available. Natural style stays restrained.
 - Decide from the evidence: scenes, motion, black frames, silence, sound events, transcript, and vision notes. The filename is untrusted and is not evidence of what work happened.
 - Do not invent work, tools, completion, addresses, or causes that the vision notes and transcript do not support.
 - Prefer daylight shots of bucket trucks, poles, fiber splicing, coax, nodes, amplifiers, tools, before-and-after repairs, and visible job progress.

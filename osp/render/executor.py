@@ -41,6 +41,7 @@ def render_edit(
     has_audio = bool(analysis.get("has_audio"))
     clips: list[dict] = []
     captions_burned = False
+    tracked_segments = 0
     for index, segment in enumerate(plan.get("segments") or []):
         if segment.get("chapter_card"):
             card = work / f"card-{index:02d}.mp4"
@@ -63,6 +64,11 @@ def render_edit(
                 }
             )
         seg_path = work / f"seg-{index:02d}.mp4"
+        tracking = []
+        if orientation == "portrait" and (plan.get("meta") or {}).get("subject_tracking"):
+            from osp.analysis.tracking import track_subject
+            tracking = track_subject(source, segment, analysis)
+            tracked_segments += bool(tracking)
         burned = _render_segment(
             source=source,
             segment=segment,
@@ -78,6 +84,8 @@ def render_edit(
             timeout=settings.ffmpeg_timeout_sec,
             on_progress=on_progress,
             title=plan.get("title") if index == 0 and plan.get("open_with_title") else None,
+            caption_style=(plan.get("meta") or {}).get("editing_style", "natural"),
+            tracking=tracking,
         )
         captions_burned = captions_burned or burned
         clips.append(
@@ -102,6 +110,7 @@ def render_edit(
     info = probe_media(final)
     nominal = _nominal_duration(clips)
     return {
+        "tracking": {"requested": bool((plan.get("meta") or {}).get("subject_tracking")) and orientation == "portrait", "tracked_segments": tracked_segments, "segments": len(plan["segments"])},
         "path": str(final),
         "orientation": orientation,
         "width": info["width"],
@@ -217,6 +226,8 @@ def _render_segment(
     timeout: float,
     on_progress=None,
     title=None,
+    caption_style="natural",
+    tracking=None,
 ) -> bool:
     width, height = size
     start = float(segment["source_start"])
@@ -235,7 +246,7 @@ def _render_segment(
     if title and Path(FONT).exists():
         title_name = f"title-{index:02d}.txt"
         (work / title_name).write_text(
-            "\n".join(textwrap.wrap(str(title), width=25 if height > width else 40)[:2]),
+            "\n".join(textwrap.wrap(str(title), width=25 if height > width else 40)),
             encoding="utf-8",
         )
     if segment.get("captions_enabled") and segment.get("captions"):
@@ -248,6 +259,7 @@ def _render_segment(
             source_start=voice["voiceover_start"] if is_voiceover else start,
             speed=1.0 if is_voiceover else speed,
             output_duration=out_dur,
+            style=caption_style,
         )
     graph, video_label = _segment_graph(
         segment=segment,
@@ -262,6 +274,7 @@ def _render_segment(
         audio_input=1 if is_voiceover else 0,
         audio_trim=(0.0, out_dur) if is_voiceover else None,
         title_name=title_name,
+        tracking=tracking,
     )
     args = [
         "-threads",
@@ -319,15 +332,15 @@ def _render_segment(
     return burned
 
 
-def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name, has_audio, frame_size=(0, 0), audio_input=0, audio_trim=None, title_name=None) -> tuple[str, str]:
+def _segment_graph(*, segment, size, fps, trim_start, trim_end, speed, ass_name, has_audio, frame_size=(0, 0), audio_input=0, audio_trim=None, title_name=None, tracking=None) -> tuple[str, str]:
     width, height = size
     pieces = [f"[0:v]trim=start={trim_start:.3f}:end={trim_end:.3f},setpts=PTS-STARTPTS[v0]"]
     blur, label = blur_steps(segment.get("blur_regions") or [], "v0", frame_size[0], frame_size[1])
     if blur:
         pieces.append(blur)
-    frame = framing_filter(width, height, segment["crop"], segment["camera"], fps, trim_end - trim_start)
+    frame = framing_filter(width, height, segment["crop"], segment["camera"], fps, trim_end - trim_start, tracking=tracking)
     tail = [frame, grade_filter(segment["visual"])]
-    if segment["camera"].get("move") == "none":
+    if tracking or segment["camera"].get("move") == "none":
         tail.append(f"fps={fps}")
     if abs(speed - 1) > 0.03:
         tail.append(f"setpts={1 / speed:.5f}*PTS")

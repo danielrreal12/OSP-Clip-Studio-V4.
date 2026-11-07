@@ -40,13 +40,19 @@ def _groups(words: list[dict], max_words: int = 4, max_span: float = 2.1) -> lis
     return groups
 
 
-def _line(words: list[dict], active: int) -> str:
+def _line(words: list[dict], active: int, style="natural") -> str:
     parts = []
     for index, word in enumerate(words):
         text = _clean(word["word"])
         if not text:
             continue
-        if index == active:
+        if style == "capcut":
+            text = text.upper()
+            if index == active:
+                parts.append(r"{\c&H0055EEFF&\fscx118\fscy118\t(0,90,\fscx100\fscy100)}" + text + r"{\r}")
+            else:
+                parts.append(text)
+        elif index == active:
             parts.append(r"{\c&H00FFFFFF&\fscx108\fscy108}" + text + r"{\r}")
         else:
             parts.append(r"{\c&H00C8D0DC&}" + text + r"{\r}")
@@ -63,6 +69,7 @@ def write_ass(
     source_start: float,
     speed: float,
     output_duration: float,
+    style: str = "natural",
 ) -> bool:
     """Map source-absolute word times onto the segment's output timeline."""
     events = []
@@ -84,19 +91,20 @@ def write_ass(
             if start >= output_duration:
                 continue
             mapped.append({"word": item["word"], "start": start, "end": min(output_duration, end)})
-        for group in _groups(mapped):
+        for group in _groups(mapped, max_words=3 if style == "capcut" else 4):
             for index, word in enumerate(group):
                 nxt = group[index + 1]["start"] if index + 1 < len(group) else word["end"]
                 start = word["start"]
                 end = max(start + 0.06, min(output_duration, nxt))
                 if end <= start:
                     continue
-                events.append((start, end, _line(group, index)))
+                events.append((start, end, _line(group, index, style)))
     if not events:
         return False
     alignment = 8 if placement == "upper" else 2
     margin_v = int(height * (0.1 if placement == "upper" else 0.14))
-    font_size = 46 if height > width else 34
+    font_size = int(width * (0.068 if height > width else 0.032)) if style == "capcut" else (46 if height > width else 34)
+    font_size = max(14, font_size)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}

@@ -774,6 +774,14 @@ def refine_plan(raw: Any, analysis: dict, settings, options: dict) -> dict:
         "revision": 0,
         "refinements": notes,
     }
+    plan["meta"]["subject_tracking"] = bool(options.get("subject_tracking"))
+    if options.get("editing_style") == "capcut":
+        from osp.render.style import apply_capcut
+        plan = apply_capcut(plan, analysis)
+        if options.get("has_music"):
+            plan["music"]["use_bed"] = True
+    else:
+        plan["meta"]["editing_style"] = "natural"
     return plan
 
 

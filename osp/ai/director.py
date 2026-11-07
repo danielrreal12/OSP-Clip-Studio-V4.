@@ -60,6 +60,7 @@ def _evidence(analysis: dict, options: dict, settings) -> dict:
         "filename_is_not_evidence": True,
         "duration_sec": duration,
         "mode": mode,
+        "editing_style": options.get("editing_style") or "natural",
         "output_duration_budget_sec": duration_budget,
         "target_duration_sec": round(min(duration_budget, max(4, duration * 0.75)), 2),
         "editing_brief": "Finished field-work story: strong visual opening, complete explanation, work detail, satisfying close. Use useful silent work as B-roll; move real explanation audio over it when pictures during speech are weak.",
