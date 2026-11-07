@@ -83,7 +83,7 @@ def render_edit(
             frame_size=_display_size(analysis),
             timeout=settings.ffmpeg_timeout_sec,
             on_progress=on_progress,
-            title=(plan.get("hook") or plan.get("title")) if index == 0 and plan.get("open_with_title") else (segment.get("on_screen_label") if (plan.get("meta") or {}).get("editing_style") == "tiktok" else None),
+            title=(plan.get("hook") or plan.get("title")) if index == 0 and plan.get("open_with_title") else (segment.get("on_screen_label") if (plan.get("meta") or {}).get("editing_style") == "tiktok" and not (index == len(plan["segments"])-1 and plan.get("closing_line")) else None),
             closing=plan.get("closing_line") if index == len(plan["segments"])-1 else None,
             caption_style=(plan.get("meta") or {}).get("editing_style", "natural"),
             tracking=tracking,
