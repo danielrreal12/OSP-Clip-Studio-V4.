@@ -154,3 +154,27 @@ def test_timing_repair_still_rejects_out_of_bounds_and_bad_voiceover():
             segment["audio"].update(voiceover_start=7, voiceover_end=18)
         with pytest.raises(PlanValidationError):
             refine_plan({"segments": [segment]}, _analysis(30), _settings(), {"mode": "highlights"})
+
+
+def test_overlapping_shots_keep_unique_footage_without_replays():
+    plan = refine_plan({"segments": [
+        default_segment(0, 5, 1), default_segment(3, 8, 2),
+        default_segment(1, 4, 3), default_segment(7, 10, 4),
+    ]}, _analysis(15), _settings(), {"mode": "highlights"})
+    assert [(s["source_start"], s["source_end"]) for s in plan["segments"]] == [(0, 5), (5, 8), (8, 10)]
+    assert any("overlapping" in note for note in plan["meta"]["refinements"])
+
+
+def test_overlap_trim_does_not_split_a_word():
+    analysis = _analysis(15, [{"word": "explanation", "start": 4.7, "end": 5.5}])
+    plan = refine_plan({"segments": [default_segment(0, 5, 1), default_segment(4, 8, 2)]},
+                       analysis, _settings(), {"mode": "highlights"})
+    assert plan["segments"][0]["source_end"] == 5.5
+    assert plan["segments"][1]["source_start"] == 5.5
+
+
+def test_fully_repeated_narration_is_dropped_without_retiming():
+    first, second = default_segment(0, 5, 1), default_segment(2, 6, 2)
+    second["audio"].update(voiceover_start=8, voiceover_end=12)
+    plan = refine_plan({"segments": [first, second]}, _analysis(15), _settings(), {"mode": "highlights"})
+    assert len(plan["segments"]) == 1
