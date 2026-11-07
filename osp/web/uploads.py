@@ -81,7 +81,7 @@ def register_uploads(app):
     def progress(upload_id):
         with lock:
             data = status(folder_for(upload_id))
-            return jsonify(offset=data["offset"], size=data["size"], chunk_bytes=CHUNK_BYTES)
+            return jsonify(offset=data["offset"], size=data["size"], chunk_bytes=CHUNK_BYTES, job=data.get("job"))
 
     @app.put("/api/uploads/<upload_id>")
     def chunk(upload_id):
@@ -95,6 +95,8 @@ def register_uploads(app):
         with lock:
             folder = folder_for(upload_id)
             data = status(folder)
+            if data.get("job"):
+                return jsonify(message="This upload has already been submitted.", job=data["job"]), 409
             if offset != data["offset"]:
                 return jsonify(message="Resume from the server offset.", offset=data["offset"]), 409
             if offset + length > data["size"]:
@@ -132,6 +134,8 @@ def register_uploads(app):
         with lock:
             folder = folder_for(upload_id)
             data = status(folder)
+            if data.get("job"):
+                return jsonify(job=data["job"]), 202
             if data["offset"] != data["size"]:
                 return jsonify(message="The video upload is incomplete.", offset=data["offset"]), 409
             # A disk stream keeps multipart parsing from buffering the entire file.
@@ -140,7 +144,10 @@ def register_uploads(app):
             # Preserve the staging copy on queue-full/validation errors for retry.
             result = app.make_response(response)
             if result.status_code == 202:
-                shutil.rmtree(folder)
+                # Keep a small receipt so retrying a lost final response does not
+                # create another AI job or require uploading 800 MB again.
+                save(folder, {**data, "job": result.get_json()["job"]})
+                (folder / "video").unlink()
             return response
 
     app.extensions["accept_upload_session"] = accept

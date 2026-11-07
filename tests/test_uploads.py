@@ -37,7 +37,8 @@ def test_chunk_offsets_resume_and_complete(settings, sample_video, monkeypatch):
     assert response.status_code == 202
     job = response.json["job"]
     assert (app.extensions["store"].job_dir(job) / "source.mp4").read_bytes() == data
-    assert client.get(url).status_code == 404
+    assert client.get(url).json["job"] == job
+    assert client.post("/api/jobs", data={"upload_id": session}).json["job"] == job
     assert client.get("/api/jobs/" + job).json["request"]["orientation"] == "landscape"
     app.extensions["gate"].shutdown()
 
